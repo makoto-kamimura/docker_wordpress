@@ -1,0 +1,46 @@
+version: '3'
+
+services:
+   wordpress:
+     container_name: wordpress
+     image: wordpress:latest
+     depends_on:
+       - db
+     ports:
+       - "8081:80"
+     environment:
+       WORDPRESS_DB_HOST: db:3306
+       WORDPRESS_DB_USER: wordpress
+       WORDPRESS_DB_PASSWORD: wordpress
+     volumes:
+       - ./wp:/var/www/html/
+     restart: always
+
+   db:
+     container_name: wordpress_db
+     image: mysql:5.7
+     environment:
+       MYSQL_USER: wordpress
+       MYSQL_PASSWORD: wordpress
+       MYSQL_DATABASE: wordpress
+       MYSQL_ROOT_PASSWORD: wordpress
+     volumes:
+       - ./mysql/:/var/lib/mysql/
+     restart: always
+
+   https-portal:
+     image: steveltn/https-portal:1
+     ports:
+       - '80:80'
+       - '443:443'
+     restart: 'always'
+     environment:
+       DOMAINS: 'makoto-kamimura.com -> http://wordpress:8081'
+       STAGE: 'production'
+       HSTS_MAX_AGE: 60
+       CLIENT_MAX_BODY_SIZE: 10M
+     volumes:
+       - ./data/ssl_certs:/var/lib/https-portal
+
+volumes:
+    db_data:
