@@ -1,5 +1,5 @@
 # Docker_WordPress
-Wordpress環境簡易デプロイツール
+Wordpress環境簡易デプロイツール  
 当ツールは、Dockerを用いて簡易的にWordPress環境を立ち上げるスクリプトツールです。
 ※ 現在(01/06)開発中
 
