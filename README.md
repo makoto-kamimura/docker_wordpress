@@ -1,7 +1,6 @@
 # Docker_WordPress
 Wordpress環境簡易デプロイツール  
 当ツールは、Dockerを用いて簡易的にWordPress環境を立ち上げるスクリプトツールです。  
-※ 現在開発中
 
 # DEMO
  ※デモ画像等後程記載を予定
@@ -15,7 +14,11 @@ Wordpress環境簡易デプロイツール
         * SSL_certs(予定)
 
 # Installation
- ※起動方法等後程記載を予定
+Local deploy
+1. Git clone https://github.com/makoto-kamimura/Docker_WordPress.git
+2. "docker-compose.yml"の存在するディレクトリまで移動
+3. "docker-compose down -v && docker-compose build && docker-compose up -d"をターミナルにて実行
+4. "localhost:8000"をブラウザにて入力/実行
 
 # Note
 
