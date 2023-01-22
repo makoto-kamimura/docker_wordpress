@@ -16,7 +16,7 @@ Wordpress環境簡易デプロイツール
 # Installation
 Local deploy
 1. Git clone https://github.com/makoto-kamimura/Docker_WordPress.git
-2. "docker-compose.yml"の存在するディレクトリまで移動
+2. "docker_wordpress/docker-compose.yml"の存在するディレクトリまで移動
 3. "docker-compose down -v && docker-compose build && docker-compose up -d"をターミナルにて実行
 4. "localhost:8000"をブラウザにて入力/実行
 
