@@ -12,6 +12,8 @@ services:
       MYSQL_DATABASE: wordpress
       MYSQL_USER: wordpress
       MYSQL_PASSWORD: wordpress
+    networks:
+      - proxy_network
 
   wordpress:
     depends_on:
@@ -26,6 +28,8 @@ services:
       WORDPRESS_DB_PASSWORD: wordpress
     volumes:
       - wordpress_data:/var/www/html
+    networks:
+      - proxy_network
 
   nginx:
     image: nginx:latest
@@ -39,6 +43,8 @@ services:
       - ./nginx_data/logs:/var/log/nginx
     depends_on:
       - wordpress
+    networks:
+      - proxy_network
 
   certbot:
     image: certbot/certbot
@@ -60,3 +66,7 @@ volumes:
       type: none
       device: ./wordpress/wordpress_data
       o: bind
+
+networks:
+  proxy_network:
+    driver: bridge
