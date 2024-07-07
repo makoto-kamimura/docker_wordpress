@@ -30,7 +30,9 @@ Local deploy
     1. example.com を取得したドメイン名に変更
 2. Certbotで証明書を取得
     1. docker-compose run certbot certonly --webroot --webroot-path=/usr/share/nginx/html --email your-email@example.com --agree-tos --no-eff-email -d example.com
-3. 証明書の反映
+3. nginx_data/conf.d/default.confファイルの置換
+    1. mv nginx_data/conf.d/default.conf.public nginx_data/conf.d/default.conf
+4. 証明書の反映
     1. docker-compose down && docker-compose up -d
 ## internal
 1. プライベートキーの発行
@@ -41,8 +43,7 @@ Local deploy
 3. 自己署名証明書の作成
     1. openssl x509 -req -days 365 -in ./nginx_data/certs/cert.csr -signkey ./nginx_data/certs/privkey.pem -out ./nginx_data/certs/fullchain.pem
 4. nginx_data/conf.d/default.confファイルの置換
-    1. mv nginx_data/conf.d/default.conf nginx_data/conf.d/default_public.conf
-    2. mv nginx_data/conf.d/default_local.conf nginx_data/conf.d/default.conf
+    1. mv nginx_data/conf.d/default.conf.local nginx_data/conf.d/default.conf
 5. 証明書の反映
     1. docker-compose down && docker-compose up -d
 
