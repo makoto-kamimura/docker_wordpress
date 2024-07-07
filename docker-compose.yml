@@ -1,28 +1,62 @@
-version: '3'
+version: '3.8'
 
 services:
-   db:
-     image: mysql:5.7
-     platform: linux/amd64
-     volumes:
-       - db_data:/var/lib/mysql
-     restart: always
-     environment:
-       MYSQL_ROOT_PASSWORD: somewordpress
-       MYSQL_DATABASE: wordpress
-       MYSQL_USER: wordpress
-       MYSQL_PASSWORD: wordpress
+  db:
+    image: mysql:5.7
+    platform: linux/amd64
+    volumes:
+      - db_data:/var/lib/mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: somewordpress
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
 
-   wordpress:
-     depends_on:
-       - db
-     image: wordpress:latest
-     ports:
-       - "8000:80"
-     restart: always
-     environment:
-       WORDPRESS_DB_HOST: db:3306
-       WORDPRESS_DB_USER: wordpress
-       WORDPRESS_DB_PASSWORD: wordpress
+  wordpress:
+    depends_on:
+      - db
+    image: wordpress:latest
+    ports:
+      - "8000:80"
+    restart: always
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+    volumes:
+      - wordpress_data:/var/www/html
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx_data/conf.d:/etc/nginx/conf.d
+      - ./nginx_data/certs:/etc/nginx/certs
+      - ./nginx_data/html:/usr/share/nginx/html
+      - ./nginx_data/logs:/var/log/nginx
+    depends_on:
+      - wordpress
+
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./nginx_data/certs:/etc/letsencrypt
+      - ./nginx_data/html:/usr/share/nginx/html
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do sleep 6h & wait $${!}; certbot renew; done;'"
+
 volumes:
-    db_data:
+  db_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./wordpress/db_data
+      o: bind
+  wordpress_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./wordpress/wordpress_data
+      o: bind
