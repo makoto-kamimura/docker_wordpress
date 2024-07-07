@@ -6,6 +6,7 @@ services:
     platform: linux/amd64
     volumes:
       - db_data:/var/lib/mysql
+      - db_logs:/var/log/mysql 
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: somewordpress
@@ -28,6 +29,7 @@ services:
       WORDPRESS_DB_PASSWORD: wordpress
     volumes:
       - wordpress_data:/var/www/html
+      - wordpress_logs:/var/log/apache2
     networks:
       - proxy_network
 
@@ -37,10 +39,11 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx_data/conf.d:/etc/nginx/conf.d
-      - ./nginx_data/certs:/etc/nginx/certs
-      - ./nginx_data/html:/usr/share/nginx/html
-      - ./nginx_data/logs:/var/log/nginx
+      # - ./nginx_data/conf.d:/etc/nginx/conf.d
+      # - ./nginx_data/certs:/etc/nginx/certs
+      - nginx_data:/etc/nginx
+      # - ./nginx_data/html:/usr/share/nginx/html
+      - nginx_logs:/var/log/nginx
     depends_on:
       - wordpress
     networks:
@@ -65,6 +68,30 @@ volumes:
     driver_opts:
       type: none
       device: ./wordpress/wordpress_data
+      o: bind
+  nginx_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./nginx_data/
+      o: bind
+  db_logs:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./log_data/db_logs
+      o: bind
+  wordpress_logs:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./log_data/wordpress_logs
+      o: bind
+  nginx_logs:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./log_data/nginx_logs
       o: bind
 
 networks:
