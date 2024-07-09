@@ -55,6 +55,8 @@ services:
       - ./nginx_data/certs:/etc/letsencrypt
       - ./nginx_data/html:/usr/share/nginx/html
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do sleep 6h & wait $${!}; certbot renew; done;'"
+    command: certonly --webroot --webroot-path=/usr/share/nginx/html -d example.com
+    restart: unless-stopped
 
 volumes:
   db_data:
