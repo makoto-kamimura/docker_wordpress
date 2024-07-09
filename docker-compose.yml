@@ -39,10 +39,10 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      # - ./nginx_data/conf.d:/etc/nginx/conf.d
-      # - ./nginx_data/certs:/etc/nginx/certs
-      - nginx_data:/etc/nginx
-      # - ./nginx_data/html:/usr/share/nginx/html
+      - ./nginx_data/certs:/etc/nginx/certs
+      - ./nginx_data/conf.d:/etc/nginx/conf.d
+      - ./nginx_data/html:/usr/share/nginx/html
+      # - nginx_data:/etc/nginx
       - nginx_logs:/var/log/nginx
     depends_on:
       - wordpress

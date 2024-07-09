@@ -27,13 +27,19 @@ Local deploy
 # SSL
 ## external
 1. nginx_data/conf.d/default.confファイルを編集
-    1. example.com を取得したドメイン名に変更
-2. Certbotで証明書を取得
-    1. docker-compose run certbot certonly --webroot --webroot-path=/usr/share/nginx/html --email your-email@example.com --agree-tos --no-eff-email -d example.com
-3. nginx_data/conf.d/default.confファイルの置換
     1. cp ./nginx_conf/conf.d/default.conf.public ./nginx_data/conf.d/default.conf
+        1. example.com を取得したドメイン名に変更
+            1. :%s/example\.com/makoto-kamimura.com/g
+2. Certbot 用のディレクトリを作成
+    1. mkdir -p ./nginx_data/html/.well-known/acme-challenge
+    2. chown -R www-data:www-data ./nginx_data/html/.well-known
+
+3. Certbotで証明書を取得
+    1. docker-compose run certbot certonly --webroot --webroot-path=/usr/share/nginx/html --email your-email@example.com --agree-tos --no-eff-email -d makoto-kamimura.com
+
 4. 証明書の反映
     1. docker-compose down && docker-compose up -d
+
 ## internal
 1. プライベートキーの発行
     1. openssl genpkey -algorithm RSA -out ./nginx_data/certs/privkey.pem -pkeyopt rsa_keygen_bits:2048
