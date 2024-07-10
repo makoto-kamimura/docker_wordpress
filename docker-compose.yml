@@ -50,7 +50,7 @@ services:
       - proxy_network
 
   certbot:
-    image: certbot/certbot
+    image: certbot/certbot:latest
     volumes:
       - ./nginx_data/certs:/etc/letsencrypt
       - ./nginx_data/html:/usr/share/nginx/html
