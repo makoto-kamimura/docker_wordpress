@@ -38,6 +38,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "8080:8080"
     volumes:
       - ./nginx_data/certs:/etc/nginx/certs
       - ./nginx_data/conf.d:/etc/nginx/conf.d
@@ -57,6 +58,15 @@ services:
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do sleep 6h & wait $${!}; certbot renew; done;'"
     command: certonly --webroot --webroot-path=/usr/share/nginx/html -d example.com
     restart: unless-stopped
+
+  webalizer:
+    image: toughiq/webalizer:latest
+    volumes:
+      - nginx_logs:/logs
+      - ./nginx_data/html:/var/www/webalizer
+    restart: unless-stopped
+    networks:
+      - proxy_network
 
 volumes:
   db_data:

@@ -181,6 +181,8 @@ a. サーバーログ解析
     c. ログ解析ツールの利用
         i. AWStats
         ii. Webalizer
+            * sudo docker-compose exec webalizer webalizer /logs/access.log
+
 
 b. "Google Analytics" プラグインの利用
     * 

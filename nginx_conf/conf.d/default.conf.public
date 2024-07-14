@@ -18,3 +18,13 @@ server {
         root /usr/share/nginx/html;
     }
 }
+
+server {
+    listen 8080;
+    server_name example.com;
+
+    location / {
+        root /usr/share/nginx/html;
+        index index.html;
+    }
+}
