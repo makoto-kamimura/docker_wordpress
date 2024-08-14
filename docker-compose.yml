@@ -43,10 +43,23 @@ services:
       - ./nginx_data/certs:/etc/nginx/certs
       - ./nginx_data/conf.d:/etc/nginx/conf.d
       - ./nginx_data/html:/usr/share/nginx/html
-      # - nginx_data:/etc/nginx
+      - ./nginx_data/modsecurity:/etc/nginx/modsecurity
       - nginx_logs:/var/log/nginx
     depends_on:
       - wordpress
+    networks:
+      - proxy_network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    ports:
+      - "8888:80"
+    restart: always
+    environment:
+      PMA_HOST: db
+      MYSQL_ROOT_PASSWORD: somewordpress
+    depends_on:
+      - db
     networks:
       - proxy_network
 

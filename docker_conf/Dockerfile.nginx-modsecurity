@@ -1,0 +1,40 @@
+# Dockerfile.nginx-modsecurity
+
+# ベースとなるNginxイメージを選択
+FROM nginx:latest
+
+# 必要なパッケージをインストール
+RUN apt-get update \
+    && apt-get install -y \
+        libmodsecurity-dev \
+        git \
+        curl \
+        libcurl4-openssl-dev \
+        libyajl-dev \
+        libgeoip-dev \
+        liblmdb-dev \
+        libpcre3-dev \
+        libxml2-dev \
+        pkgconf \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# ModSecurityのビルドと設定
+RUN git clone --depth 1 -b v3/master --single-branch https://github.com/SpiderLabs/ModSecurity /tmp/ModSecurity \
+    && cd /tmp/ModSecurity \
+    && git submodule init \
+    && git submodule update \
+    && ./build.sh \
+    && ./configure --enable-standalone-module --disable-mlogc \
+    && make \
+    && make install \
+    && cd / \
+    && rm -rf /tmp/ModSecurity
+
+# ModSecurityをNginxと統合する設定を追加
+# RUN echo "LoadModule security2_module /usr/lib/nginx/modules/mod_security2.so" > /etc/nginx/modules-enabled/10-mod-security.conf \
+#     && echo "Include /etc/nginx/modsecurity.d/*.conf" >> /etc/nginx/nginx.conf
+
+# ポートのエクスポート
+# EXPOSE 80
+# EXPOSE 443

@@ -118,6 +118,9 @@ Wordpress環境簡易デプロイツール
     1. docker-compose down && docker-compose up -d
 
 # Note
+## メディアアップロード
+sudo chown -R www-data:www-data ./wordpress/wordpress_data/wp-content/uploads
+
 ## カスタムコード
 <!-- * WPCode
     * https://wpcode.com/ -->
@@ -168,6 +171,10 @@ require valid-user
 a. "Wordfence Security" プラグインの利用
     * https://www.wordfence.com/
         * 自動更新有効化を推奨
+    1. sudo chmod 755 ./wordpress/wordpress_data/wp-content
+    2. sudo chmod 755 ./wordpress/wordpress_data/wp-content/wflogs
+    3. sudo chown -R www-data:www-data ./wordpress/wordpress_data/wp-content/wflogs
+
 
 ## Analytics
 a. サーバーログ解析
