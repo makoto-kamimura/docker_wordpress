@@ -9,6 +9,7 @@ Wordpress環境簡易デプロイツール
 ## Environment
 * Wordpress:latest
 * mysql:5.7
+* phpmyadmin:latest
 * nginx:latest
 * certbot/certbot:latest
 
@@ -104,6 +105,12 @@ Wordpress環境簡易デプロイツール
         1. もしくは下記
             1. sudo docker-compose exec nginx nginx -s reload
 
+6. Wordpress設定変更
+    1. 管理画面へアクセス
+        1. WordPress アドレス (URL)
+        1. サイトアドレス (URL)
+            1. http → https
+                1. https://example.com
 ## Internal
 1. プライベートキーの発行
     1. openssl genpkey -algorithm RSA -out ./nginx_data/certs/privkey.pem -pkeyopt rsa_keygen_bits:2048
