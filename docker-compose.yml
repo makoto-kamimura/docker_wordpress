@@ -1,18 +1,21 @@
 version: '3.8'
 
 services:
-  db:
-    image: mysql:5.7
-    platform: linux/amd64
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
     volumes:
-      - db_data:/var/lib/mysql
-      - db_logs:/var/log/mysql 
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: somewordpress
-      MYSQL_DATABASE: wordpress
-      MYSQL_USER: wordpress
-      MYSQL_PASSWORD: wordpress
+      - ./nginx_data/certs:/etc/nginx/certs
+      - ./nginx_data/conf.d:/etc/nginx/conf.d
+      - ./nginx_data/html:/usr/share/nginx/html
+      - ./nginx_data/modsecurity:/etc/nginx/modsecurity
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - wordpress
     networks:
       - proxy_network
 
@@ -33,20 +36,18 @@ services:
     networks:
       - proxy_network
 
-  nginx:
-    image: nginx:latest
-    ports:
-      - "80:80"
-      - "443:443"
-      - "8080:8080"
+  db:
+    image: mysql:5.7
+    platform: linux/amd64
     volumes:
-      - ./nginx_data/certs:/etc/nginx/certs
-      - ./nginx_data/conf.d:/etc/nginx/conf.d
-      - ./nginx_data/html:/usr/share/nginx/html
-      - ./nginx_data/modsecurity:/etc/nginx/modsecurity
-      - nginx_logs:/var/log/nginx
-    depends_on:
-      - wordpress
+      - db_data:/var/lib/mysql
+      - db_logs:/var/log/mysql 
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: somewordpress
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
     networks:
       - proxy_network
 
