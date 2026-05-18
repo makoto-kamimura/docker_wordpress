@@ -1,0 +1,57 @@
+name: Deploy
+
+# 手動トリガで本番デプロイを実行する。
+# 必要な GitHub Secrets:
+#   DEPLOY_HOST     本番サーバの FQDN / IP
+#   DEPLOY_USER     SSH ユーザ名 (例: deployer)
+#   DEPLOY_SSH_KEY  SSH 秘密鍵 (PEM)
+#   DEPLOY_PORT     SSH ポート (任意, デフォルト 22)
+#   REPO_PATH       本番サーバ上のリポジトリパス (例: /srv/docker_wordpress)
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy (e.g. origin/main, v1.2.3)"
+        required: true
+        default: "origin/main"
+      skip_backup:
+        description: "Skip pre-deploy DB backup (1 to skip)"
+        required: false
+        default: "0"
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "${{ secrets.DEPLOY_PORT || '22' }}" -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Run deploy.sh on production
+        env:
+          REF: ${{ github.event.inputs.ref }}
+          SKIP_BACKUP: ${{ github.event.inputs.skip_backup }}
+        run: |
+          ssh -i ~/.ssh/id_deploy \
+              -p "${{ secrets.DEPLOY_PORT || '22' }}" \
+              -o StrictHostKeyChecking=yes \
+              "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+              "cd '${{ secrets.REPO_PATH }}' && REF='${REF}' SKIP_BACKUP='${SKIP_BACKUP}' ./platform/scripts/deploy.sh"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Deploy" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ref: \`${{ github.event.inputs.ref }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- skip_backup: \`${{ github.event.inputs.skip_backup }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- host: \`${{ secrets.DEPLOY_HOST }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- status: \`${{ job.status }}\`" >> "$GITHUB_STEP_SUMMARY"

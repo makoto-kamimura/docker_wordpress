@@ -1,0 +1,53 @@
+# ベースイメージとして公式のnginxを使用
+FROM nginx:latest
+
+# 必要なパッケージをインストール
+RUN apt-get update && apt-get install -y \
+    libmodsecurity-dev \
+    git \
+    build-essential \
+    autoconf \
+    automake \
+    libtool \
+    pkg-config \
+    wget \
+    libcurl4-openssl-dev \
+    libxml2-dev \
+    libpcre3-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ModSecurityのソースコードをクローンしてビルド
+RUN git clone --depth 1 -b v3/master --single-branch https://github.com/SpiderLabs/ModSecurity /opt/ModSecurity \
+    && cd /opt/ModSecurity \
+    && git submodule init \
+    && git submodule update \
+    && ./build.sh \
+    && ./configure \
+    && make \
+    && make install
+
+# ModSecurity-nginxコネクターのソースコードをクローンしてビルド
+RUN git clone --depth 1 https://github.com/SpiderLabs/ModSecurity-nginx.git /opt/ModSecurity-nginx \
+    && wget 'http://nginx.org/download/nginx-1.21.6.tar.gz' \
+    && tar zxvf nginx-1.21.6.tar.gz \
+    && cd nginx-1.21.6 \
+    && ./configure --with-compat --add-dynamic-module=/opt/ModSecurity-nginx \
+    && make modules \
+    && cp objs/ngx_http_modsecurity_module.so /etc/nginx/modules
+
+# OWASP CRSをダウンロード
+RUN git clone https://github.com/coreruleset/coreruleset /etc/nginx/modsec-rules \
+    && cp /etc/nginx/modsec-rules/crs-setup.conf.example /etc/nginx/modsec-rules/crs-setup.conf
+
+# nginx設定ファイルとModSecurity設定ファイルをコピー
+# COPY nginx.conf /etc/nginx/nginx.conf
+# COPY modsecurity.conf /etc/nginx/modsecurity.conf
+
+# ディレクトリの設定
+RUN mkdir -p /var/log/nginx/modsecurity
+
+# ポートのエクスポート
+EXPOSE 80 443
+
+CMD ["nginx", "-g", "daemon off;"]

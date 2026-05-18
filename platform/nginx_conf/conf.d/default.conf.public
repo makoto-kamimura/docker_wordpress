@@ -1,0 +1,106 @@
+# =====================================================================
+# 本番公開用 Nginx 設定 (Let's Encrypt 証明書取得後に有効化)
+# 配置先: ./nginx_data/conf.d/default.conf
+# テンプレ内の __DOMAIN__ を本番ドメインに置換してから配置すること:
+#   sed "s/__DOMAIN__/${PUBLIC_DOMAIN}/g" \
+#       nginx_conf/conf.d/default.conf.public \
+#     > nginx_data/conf.d/default.conf
+# =====================================================================
+
+# ---- HTTP (80 -> 443 リダイレクト + ACME チャレンジのみ受ける) ----
+server {
+    listen      8080;
+    listen [::]:8080;
+    server_name __DOMAIN__;
+
+    # Let's Encrypt 更新用 (これだけは平文 80 で受ける)
+    location ^~ /.well-known/acme-challenge/ {
+        root /usr/share/nginx/html;
+        default_type "text/plain";
+        try_files $uri =404;
+    }
+
+    location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+    }
+
+    # それ以外は HTTPS へ強制リダイレクト
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# ---- HTTPS 本体 -----------------------------------------------------
+server {
+    listen      8443 ssl;
+    listen [::]:8443 ssl;
+    http2       on;
+    server_name __DOMAIN__;
+
+    ssl_certificate     /etc/nginx/certs/live/__DOMAIN__/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/live/__DOMAIN__/privkey.pem;
+
+    # Mozilla intermediate (2024) 相当
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:MozSSL:10m;
+    ssl_session_tickets off;
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    resolver 1.1.1.1 8.8.8.8 valid=300s;
+    resolver_timeout 5s;
+
+    # ---- セキュリティヘッダ ----
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options    "nosniff" always;
+    add_header X-Frame-Options           "SAMEORIGIN" always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy        "geolocation=(), microphone=(), camera=()" always;
+    add_header X-Robots-Tag              "index, follow" always;
+
+    # ---- WordPress 既知の攻撃面を遮断 ----
+    location = /xmlrpc.php { deny all; access_log off; log_not_found off; return 403; }
+    location ~* /wp-config\.php { deny all; }
+    location ~* /(?:\.htaccess|\.htpasswd|\.git|\.env) { deny all; }
+    location ~* /wp-content/uploads/.*\.(php|phps|phtml)$ { deny all; }
+
+    # ---- REST API のユーザ列挙対策 (非ログイン時に拒否) ----
+    location ~* ^/wp-json/wp/v2/users { return 401; }
+
+    # ---- 静的アセットはキャッシュ可 ----
+    location ~* \.(?:css|js|woff2?|ttf|otf|eot|ico|gif|jpe?g|png|svg|webp)$ {
+        proxy_pass http://wordpress:80;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        expires 30d;
+        add_header Cache-Control "public, immutable" always;
+    }
+
+    location / {
+        proxy_pass http://wordpress:80;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        "upgrade";
+
+        proxy_connect_timeout 30s;
+        proxy_send_timeout    60s;
+        proxy_read_timeout    60s;
+
+        client_max_body_size 64m;
+
+        gzip on;
+        gzip_comp_level 5;
+        gzip_min_length 256;
+        gzip_proxied any;
+        gzip_types text/plain text/css application/json application/javascript application/xml image/svg+xml;
+    }
+}

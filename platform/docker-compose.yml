@@ -1,0 +1,398 @@
+# =====================================================================
+# docker_wordpress 本番構成
+# - シークレットは ./platform/.env から読み込む
+# - WordPress / DB はホストにポートを露出させず Nginx (WAF) を必ず経由
+# - phpMyAdmin は profile=admin の時だけ起動し、localhost のみにバインド
+# =====================================================================
+
+name: docker_wordpress
+
+# ----- 再利用ブロック -------------------------------------------------
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-restart: &default-restart
+  restart: unless-stopped
+
+services:
+
+  # -------------------------------------------------------------------
+  # MariaDB 10.11 LTS
+  # MySQL 5.7 (EOL) からの移行先。InnoDB 互換だが on-disk フォーマットが
+  # 異なるため、既存 db_data/ ではなく db_data_mariadb/ を別途使う。
+  # -------------------------------------------------------------------
+  db:
+    image: mariadb:10.11.13
+    <<: *default-restart
+    logging: *default-logging
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${MYSQL_DATABASE}
+      MARIADB_USER: ${MYSQL_USER}
+      MARIADB_PASSWORD: ${MYSQL_PASSWORD}
+      MARIADB_AUTO_UPGRADE: "1"
+    volumes:
+      - db_data:/var/lib/mysql
+      - db_logs:/var/log/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: ${DB_MEM_LIMIT:-512m}
+    mem_limit: ${DB_MEM_LIMIT:-512m}
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend_network
+
+  # -------------------------------------------------------------------
+  # WordPress (Apache + PHP)
+  # ホストにポートを露出させない (ports: は意図的に未指定)
+  # -------------------------------------------------------------------
+  wordpress:
+    image: wordpress:6.7.2-php8.3-apache
+    <<: *default-restart
+    logging: *default-logging
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
+      WORDPRESS_DB_USER: ${MYSQL_USER}
+      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
+      WORDPRESS_TABLE_PREFIX: ${WP_TABLE_PREFIX:-wp_}
+      # Salt は getenv で参照する (PHP 経由)
+      WP_AUTH_KEY: ${WP_AUTH_KEY}
+      WP_SECURE_AUTH_KEY: ${WP_SECURE_AUTH_KEY}
+      WP_LOGGED_IN_KEY: ${WP_LOGGED_IN_KEY}
+      WP_NONCE_KEY: ${WP_NONCE_KEY}
+      WP_AUTH_SALT: ${WP_AUTH_SALT}
+      WP_SECURE_AUTH_SALT: ${WP_SECURE_AUTH_SALT}
+      WP_LOGGED_IN_SALT: ${WP_LOGGED_IN_SALT}
+      WP_NONCE_SALT: ${WP_NONCE_SALT}
+      WP_REDIS_HOST: redis
+      WP_REDIS_PORT: "6379"
+      WP_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      WORDPRESS_CONFIG_EXTRA: |
+        define('DISALLOW_FILE_EDIT', true);
+        define('FORCE_SSL_ADMIN', true);
+        define('WP_AUTO_UPDATE_CORE', 'minor');
+        define('WP_DEBUG', false);
+        define('WP_DEBUG_DISPLAY', false);
+        define('AUTH_KEY',         getenv('WP_AUTH_KEY'));
+        define('SECURE_AUTH_KEY',  getenv('WP_SECURE_AUTH_KEY'));
+        define('LOGGED_IN_KEY',    getenv('WP_LOGGED_IN_KEY'));
+        define('NONCE_KEY',        getenv('WP_NONCE_KEY'));
+        define('AUTH_SALT',        getenv('WP_AUTH_SALT'));
+        define('SECURE_AUTH_SALT', getenv('WP_SECURE_AUTH_SALT'));
+        define('LOGGED_IN_SALT',   getenv('WP_LOGGED_IN_SALT'));
+        define('NONCE_SALT',       getenv('WP_NONCE_SALT'));
+        define('WP_REDIS_HOST',     getenv('WP_REDIS_HOST'));
+        define('WP_REDIS_PORT',     (int) getenv('WP_REDIS_PORT'));
+        define('WP_REDIS_PASSWORD', getenv('WP_REDIS_PASSWORD'));
+        define('WP_CACHE',          true);
+        if (!empty($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO']==='https') { $$_SERVER['HTTPS']='on'; }
+        if (!empty($$_SERVER['HTTP_X_FORWARDED_FOR'])) { $$_SERVER['REMOTE_ADDR'] = trim(explode(',', $$_SERVER['HTTP_X_FORWARDED_FOR'])[0]); }
+    expose:
+      - "80"
+    volumes:
+      - wordpress_data:/var/www/html
+      - wordpress_logs:/var/log/apache2
+      - ./php_conf/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost/wp-login.php || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: ${WP_MEM_LIMIT:-512m}
+    mem_limit: ${WP_MEM_LIMIT:-512m}
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - frontend_network
+      - backend_network
+
+  # -------------------------------------------------------------------
+  # Redis (WP Object Cache) — backend_network 限定
+  # WordPress 側は `Redis Object Cache` プラグインを有効化すること
+  # -------------------------------------------------------------------
+  redis:
+    image: redis:7.4.2-alpine
+    <<: *default-restart
+    logging: *default-logging
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD}
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    deploy:
+      resources:
+        limits:
+          memory: 320m
+    mem_limit: 320m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - backend_network
+
+  # -------------------------------------------------------------------
+  # Nginx + OWASP ModSecurity CRS (リバースプロキシ / WAF)
+  # -------------------------------------------------------------------
+  nginx:
+    image: owasp/modsecurity-crs:nginx-alpine
+    <<: *default-restart
+    logging: *default-logging
+    depends_on:
+      wordpress:
+        condition: service_started
+    environment:
+      BACKEND: http://wordpress:80
+      SERVER_NAME: ${PUBLIC_DOMAIN}
+      PARANOIA: "1"
+      ANOMALY_INBOUND: "10"
+      ANOMALY_OUTBOUND: "5"
+    ports:
+      - "80:8080"
+      - "443:8443"
+    volumes:
+      - ./nginx_data/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx_data/certs:/etc/nginx/certs:ro
+      - ./nginx_data/html:/usr/share/nginx/html
+      # CRS のプレースホルダ exclusion ファイルを上書きする
+      - ./nginx_data/modsec-rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf:ro
+      - ./nginx_data/modsec-rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf:/etc/modsecurity.d/owasp-crs/rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf:ro
+      - nginx_logs:/var/log/nginx
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz >/dev/null 2>&1 || nginx -t"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: ${NGINX_MEM_LIMIT:-256m}
+    mem_limit: ${NGINX_MEM_LIMIT:-256m}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
+    networks:
+      - frontend_network
+
+  # -------------------------------------------------------------------
+  # Certbot (Let's Encrypt 証明書更新ループ)
+  # 初回発行は手動: `docker compose run --rm certbot certonly ...`
+  # 常駐は renew だけ実行する
+  # -------------------------------------------------------------------
+  certbot:
+    image: certbot/certbot:v2.11.0
+    <<: *default-restart
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - ./nginx_data/certs:/etc/letsencrypt
+      - ./nginx_data/html:/usr/share/nginx/html
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        trap exit TERM
+        while :; do
+          certbot renew --webroot --webroot-path=/usr/share/nginx/html --quiet --no-random-sleep-on-renew
+          sleep 12h & wait $${!}
+        done
+
+  # -------------------------------------------------------------------
+  # Webalizer (ログ解析 — 必要な時のみ profile=stats で起動)
+  # -------------------------------------------------------------------
+  webalizer:
+    image: toughiq/webalizer:latest
+    profiles: ["stats"]
+    logging: *default-logging
+    volumes:
+      - nginx_logs:/logs:ro
+      - ./nginx_data/html:/var/www/webalizer
+    networks:
+      - frontend_network
+
+  # -------------------------------------------------------------------
+  # Uptime Kuma (profile=monitoring) — self-hosted 外形監視 / アラート
+  # 127.0.0.1:3001 のみにバインド。SSH トンネル経由でアクセスする想定:
+  #   ssh -L 3001:127.0.0.1:3001 deployer@<host>
+  # 起動: docker compose --profile monitoring up -d uptime-kuma
+  # -------------------------------------------------------------------
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.13
+    profiles: ["monitoring"]
+    <<: *default-restart
+    logging: *default-logging
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+    mem_limit: 384m
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - frontend_network
+
+  # -------------------------------------------------------------------
+  # WP-CLI (profile=cli) — 自動セットアップ / プラグイン管理 / DB 操作用
+  # 例: docker compose run --rm wpcli wp plugin list
+  # -------------------------------------------------------------------
+  wpcli:
+    image: wordpress:cli-2.10.0-php8.3
+    profiles: ["cli"]
+    user: "33:33"  # www-data
+    logging: *default-logging
+    depends_on:
+      db:
+        condition: service_healthy
+      wordpress:
+        condition: service_started
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
+      WORDPRESS_DB_USER: ${MYSQL_USER}
+      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - wordpress_data:/var/www/html
+      - ./scripts:/scripts:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend_network
+
+  # -------------------------------------------------------------------
+  # phpMyAdmin (profile=admin の時だけ起動 / 127.0.0.1:8888 のみバインド)
+  # 通常運用では起動させず、必要な時に手動で:
+  #   docker compose --profile admin up -d phpmyadmin
+  # -------------------------------------------------------------------
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:5.2.1
+    profiles: ["admin"]
+    logging: *default-logging
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PMA_HOST: db
+      PMA_USER: ${PMA_USER}
+      PMA_PASSWORD: ${PMA_PASSWORD}
+      UPLOAD_LIMIT: 64M
+    ports:
+      - "127.0.0.1:8888:80"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
+    networks:
+      - backend_network
+
+# =====================================================================
+# Volumes (bind マウントは app/ 配下のホスト永続データに固定)
+# =====================================================================
+volumes:
+  db_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ../app/wordpress/db_data_mariadb
+      o: bind
+  wordpress_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ../app/wordpress/wordpress_data
+      o: bind
+  db_logs:
+    driver: local
+    driver_opts:
+      type: none
+      device: ../app/log_data/db_logs
+      o: bind
+  wordpress_logs:
+    driver: local
+    driver_opts:
+      type: none
+      device: ../app/log_data/wordpress_logs
+      o: bind
+  nginx_logs:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./log_data/nginx_logs
+      o: bind
+  redis_data:
+    driver: local
+  uptime_kuma_data:
+    driver: local
+
+# =====================================================================
+# Networks
+# - frontend_network: nginx ⇄ wordpress (および任意の webalizer)
+# - backend_network:  wordpress ⇄ db (および admin profile の phpmyadmin)
+#   backend は internal: true で外部疎通不可
+# =====================================================================
+networks:
+  frontend_network:
+    driver: bridge
+  backend_network:
+    driver: bridge
+    internal: true

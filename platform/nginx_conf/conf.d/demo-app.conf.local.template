@@ -1,0 +1,31 @@
+# =============================================================================
+# Demo app subdomain template (LOCAL, HTTP only)
+# =============================================================================
+#
+# ローカル開発時に SSL なしで動作確認するための簡易版。
+# /etc/hosts に "127.0.0.1 __SUBDOMAIN__" を書き、ブラウザから http で確認する。
+#
+# 使い方:
+#   1. cp demo-app.conf.local.template ../nginx_data/conf.d/todo.local.conf
+#   2. __SUBDOMAIN__ / __SERVICE__ / __PORT__ を置換
+#   3. /etc/hosts に "127.0.0.1 __SUBDOMAIN__" を追加
+#   4. docker compose restart nginx
+
+server {
+    listen 8080;
+    server_name __SUBDOMAIN__;
+
+    location / {
+        client_max_body_size 16m;
+
+        proxy_pass         http://__SERVICE__:__PORT__;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Upgrade           $http_upgrade;
+        proxy_set_header   Connection        $connection_upgrade;
+        proxy_read_timeout 60s;
+    }
+}

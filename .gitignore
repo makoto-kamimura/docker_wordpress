@@ -1,1 +1,37 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Application data
+app/wordpress/db_data/
+app/wordpress/wordpress_data/
+app/log_data/
+
+# Platform runtime
+platform/log_data/
+platform/nginx_data/certs/
+platform/nginx_data/html/
+platform/nginx_data/conf.d/*.conf
+
+# Temporary
 /work
+/doc/task.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node (if needed)
+node_modules/
+npm-debug.log
+
+# Docker
+.docker/
