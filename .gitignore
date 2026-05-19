@@ -3,13 +3,22 @@
 .env.local
 .env.*.local
 
-# Application data
+# Application data (contents ignored, directory structure tracked via .gitkeep)
 app/wordpress/db_data/
-app/wordpress/wordpress_data/
-app/log_data/
+app/wordpress/db_data_mariadb/**
+!app/wordpress/db_data_mariadb/.gitkeep
+app/wordpress/wordpress_data/**
+!app/wordpress/wordpress_data/.gitkeep
+app/log_data/**
+!app/log_data/db_logs/
+!app/log_data/db_logs/.gitkeep
+!app/log_data/wordpress_logs/
+!app/log_data/wordpress_logs/.gitkeep
 
 # Platform runtime
-platform/log_data/
+platform/log_data/**
+!platform/log_data/nginx_logs/
+!platform/log_data/nginx_logs/.gitkeep
 platform/nginx_data/certs/
 platform/nginx_data/html/
 platform/nginx_data/conf.d/*.conf
