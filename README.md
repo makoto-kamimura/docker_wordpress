@@ -89,11 +89,15 @@ sudo docker compose run --rm --entrypoint="" certbot certbot certonly \
   --agree-tos --no-eff-email \
   -d "$(grep ^PUBLIC_DOMAIN .env | cut -d= -f2)"
 
-# ④ 本番 Nginx 設定をドメインで実体化
+# ④ 証明書を nginx コンテナ (uid=101) が読めるよう権限設定
+#    certbot は root で証明書を作成するため chown が必要
+sudo chown -R 101:101 nginx_data/certs/live nginx_data/certs/archive
+
+# ⑤ 本番 Nginx 設定をドメインで実体化
 sed "s/__DOMAIN__/$(grep ^PUBLIC_DOMAIN .env | cut -d= -f2)/g" \
   nginx_conf/conf.d/default.conf.public > nginx_data/conf.d/default.conf
 
-# ⑤ 全サービス起動
+# ⑥ 全サービス起動
 sudo docker compose up -d
 ```
 
