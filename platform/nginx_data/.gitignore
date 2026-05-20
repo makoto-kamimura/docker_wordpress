@@ -1,2 +1,4 @@
 /*
 !/.gitignore
+!/modsec-rules/
+!/modsec-rules/**

@@ -73,21 +73,27 @@ done
 ### 2. 証明書取得 → 起動
 
 ```bash
-# ACME チャレンジ用に nginx を先に起動
+# ① ディレクトリ作成・権限設定 (初回のみ)
+#    nginx コンテナ (uid=101) が conf.d へテンプレートを書き込めるよう準備
+sudo ./scripts/init-dirs.sh
+
+# ② ACME チャレンジ用に nginx を先に起動
 sudo docker compose up -d nginx
 
-# Let's Encrypt 証明書を発行
-sudo docker compose run --rm certbot certonly --webroot \
+# ③ Let's Encrypt 証明書を発行
+#    --entrypoint="" で renew ループを無効にして certonly を直接実行
+sudo docker compose run --rm --entrypoint="" certbot certbot certonly \
+  --webroot \
   --webroot-path=/usr/share/nginx/html \
   --email "$(grep ^LETSENCRYPT_EMAIL .env | cut -d= -f2)" \
   --agree-tos --no-eff-email \
   -d "$(grep ^PUBLIC_DOMAIN .env | cut -d= -f2)"
 
-# 本番 Nginx 設定をドメインで実体化
+# ④ 本番 Nginx 設定をドメインで実体化
 sed "s/__DOMAIN__/$(grep ^PUBLIC_DOMAIN .env | cut -d= -f2)/g" \
   nginx_conf/conf.d/default.conf.public > nginx_data/conf.d/default.conf
 
-# 全サービス起動
+# ⑤ 全サービス起動
 sudo docker compose up -d
 ```
 
@@ -159,6 +165,7 @@ docker_wordpress/
 │   ├── nginx_data/                     # 実行時マウント (証明書 / 適用済 conf / WAF rules)
 │   ├── php_conf/uploads.ini            # PHP オーバーライド
 │   └── scripts/
+│       ├── init-dirs.sh            # 初回: ディレクトリ作成・権限設定
 │       ├── backup-db.sh
 │       ├── initial-setup.sh
 │       ├── update-cloudflare-ips.sh

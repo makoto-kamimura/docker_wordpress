@@ -135,6 +135,7 @@ services:
     image: redis:7.4.2-alpine
     <<: *default-restart
     logging: *default-logging
+    user: redis
     command:
       - redis-server
       - --requirepass
@@ -191,7 +192,7 @@ services:
       - "80:8080"
       - "443:8443"
     volumes:
-      - ./nginx_data/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx_data/conf.d:/etc/nginx/conf.d
       - ./nginx_data/certs:/etc/nginx/certs:ro
       - ./nginx_data/html:/usr/share/nginx/html
       # CRS のプレースホルダ exclusion ファイルを上書きする
