@@ -22,11 +22,10 @@ REPO_DIR="$(cd "${PLATFORM_DIR}/.." && pwd)"
 cd "${REPO_DIR}"
 
 # .env を読み込み (PUBLIC_DOMAIN 等)
+# shellcheck source=scripts/lib/load-env.sh
+source "${SCRIPT_DIR}/lib/load-env.sh"
 if [[ -f "${PLATFORM_DIR}/.env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  . "${PLATFORM_DIR}/.env"
-  set +a
+  load_env "${PLATFORM_DIR}/.env"
 fi
 
 REF="${REF:-origin/main}"

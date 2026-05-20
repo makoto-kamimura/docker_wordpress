@@ -13,15 +13,9 @@ PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PLATFORM_DIR}"
 
 # .env を読み込む (MYSQL_ROOT_PASSWORD 等)
-if [[ -f .env ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  . ./.env
-  set +a
-else
-  echo "ERROR: ${PLATFORM_DIR}/.env not found" >&2
-  exit 1
-fi
+# shellcheck source=scripts/lib/load-env.sh
+source "${SCRIPT_DIR}/lib/load-env.sh"
+load_env ./.env
 
 BACKUP_DIR="${BACKUP_DIR:-${PLATFORM_DIR}/../app/backup}"
 BACKUP_KEEP_DAYS="${BACKUP_KEEP_DAYS:-14}"

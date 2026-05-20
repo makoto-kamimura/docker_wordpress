@@ -27,10 +27,9 @@ if [[ ! -f .env ]]; then
 fi
 
 # .env を読み込む
-set -a
-# shellcheck disable=SC1091
-. ./.env
-set +a
+# shellcheck source=scripts/lib/load-env.sh
+source "${SCRIPT_DIR}/lib/load-env.sh"
+load_env ./.env
 
 # 必須環境変数
 : "${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required (set in .env)}"
