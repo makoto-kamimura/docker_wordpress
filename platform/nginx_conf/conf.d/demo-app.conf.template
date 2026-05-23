@@ -66,6 +66,10 @@ server {
         proxy_set_header   X-Forwarded-Proto $scheme;
         proxy_set_header   Upgrade           $http_upgrade;
         proxy_set_header   Connection        $connection_upgrade;
+        proxy_set_header   Accept-Encoding   "";   # sub_filter に必要
         proxy_read_timeout 60s;
     }
+
+    # ポートフォリオへ戻るナビゲーションバーを全 HTML レスポンスに注入
+    include /etc/nginx/conf.d/demo-banner.inc;
 }

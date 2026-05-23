@@ -1,0 +1,3 @@
+[submodule "app/wordpress/wordpress_data/wp-content/themes/tty-portfolio"]
+	path = app/wordpress/wordpress_data/wp-content/themes/tty-portfolio
+	url = https://github.com/makoto-kamimura/tty-portfolio.git

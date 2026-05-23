@@ -199,6 +199,8 @@ services:
       - ./nginx_data/modsec-rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf:ro
       - ./nginx_data/modsec-rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf:/etc/modsecurity.d/owasp-crs/rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf:ro
       - nginx_logs:/var/log/nginx
+      # イメージ既定のテンプレートをカスタム設定で上書き (envsubst が ${SERVER_NAME} を展開して conf.d/default.conf を生成)
+      - ./nginx_conf/conf.d/default.conf.template:/etc/nginx/templates/conf.d/default.conf.template:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz >/dev/null 2>&1 || nginx -t"]
       interval: 30s

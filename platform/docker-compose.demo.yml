@@ -30,6 +30,69 @@ services:
       - proxy_network
 
   # ---------------------------------------------------------------------------
+  # docker_sales_management デモ
+  # 公開 URL : https://sales.makoto-kamimura.com
+  # Nginx conf: nginx_data/conf.d/sales.conf
+  # ---------------------------------------------------------------------------
+  demo-sales-db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo_password
+      POSTGRES_DB: sales_demo
+      TZ: Asia/Tokyo
+    volumes:
+      - demo_sales_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d sales_demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - demo_sales_backend
+
+  demo-sales-api:
+    build:
+      context: ../app/docker_sales_management/app/api
+      dockerfile: Dockerfile
+    command: bash -c "bundle exec rails db:prepare && bundle exec rails s -b 0.0.0.0 -p 3000"
+    environment:
+      RAILS_ENV: development
+      DATABASE_HOST: demo-sales-db
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo_password
+      POSTGRES_DB: sales_demo
+      RAILS_LOG_TO_STDOUT: "true"
+      BUNDLE_PATH: /usr/local/bundle
+    depends_on:
+      demo-sales-db:
+        condition: service_healthy
+    expose:
+      - "3000"
+    restart: unless-stopped
+    networks:
+      - proxy_network
+      - demo_sales_backend
+
+  demo-sales-web:
+    build:
+      context: ../app/docker_sales_management/app/web
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_API_BASE: https://sales.makoto-kamimura.com/api
+      API_BASE_INTERNAL: http://demo-sales-api:3000/api
+      NODE_ENV: development
+    depends_on:
+      - demo-sales-api
+    expose:
+      - "3001"
+    restart: unless-stopped
+    networks:
+      - proxy_network
+      - demo_sales_backend
+
+  # ---------------------------------------------------------------------------
   # 例 1: Node.js / 自前イメージ (例: TODO アプリ)
   # ---------------------------------------------------------------------------
   demo-todo:
@@ -79,7 +142,16 @@ services:
   #   networks:
   #     - proxy_network
 
+volumes:
+  demo_sales_db_data:
+    driver: local
+
 networks:
   # nginx とデモコンテナをつなぐ内部プロキシネットワーク
+  # デモアプリを追加するたびにここへ接続する (proxy_network を networks: に含める)
   proxy_network:
     driver: bridge
+  # demo-sales-* 専用の内部ネットワーク（外部疎通不可）
+  demo_sales_backend:
+    driver: bridge
+    internal: true

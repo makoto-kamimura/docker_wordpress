@@ -24,7 +24,7 @@ WordPress 環境を立ち上げてから運用するまでの手順をまとめ�
 ## 1. 初回デプロイ
 
 ```bash
-git clone https://github.com/makoto-kamimura/docker_wordpress.git
+git clone --recurse-submodules https://github.com/makoto-kamimura/docker_wordpress.git
 cd ./docker_wordpress/platform/
 
 # 1) シークレットを用意
@@ -655,6 +655,19 @@ IP レンジの自動更新スクリプトも同梱 (`./scripts/update-cloudflar
 3. Tech Stack (技術タグ) を選択
 4. 公開すると Works カード / Work 詳細ページに **● Open live demo →** ボタンが表示
 
+### 13.3 サブモジュール操作
+
+テーマは独立リポジトリ ([tty-portfolio](https://github.com/makoto-kamimura/tty-portfolio)) として管理し、本リポジトリに git submodule として組み込んでいる。
+
+| 操作 | コマンド |
+| --- | --- |
+| クローン時にテーマも取得 | `git clone --recurse-submodules <url>` |
+| クローン後にテーマを初期化 | `git submodule update --init` |
+| テーマを最新コミットに追従 | `git submodule update --remote` → 本リポジトリでコミット |
+| テーマ単体で開発・コミット | `cd app/wordpress/wordpress_data/wp-content/themes/tty-portfolio` で通常の git 操作 |
+
+> テーマ側でコミット・push したあと、本リポジトリ側でも `git add app/wordpress/wordpress_data/wp-content/themes/tty-portfolio && git commit` して参照コミットを更新する。
+
 ## 14. wp-cli (自動化)
 
 `docker-compose.yml` には `wpcli` サービス (profile=cli) を同梱。WordPress と同じ wordpress_data ボリュームを共有する。
@@ -708,6 +721,7 @@ ADMIN_EMAIL=m.kamimura.apple@gmail.com \
 ssh deployer@makoto-kamimura.com
 cd /srv/docker_wordpress
 git fetch origin && git checkout origin/main
+git submodule update --init
 cd platform
 docker compose pull
 docker compose up -d --remove-orphans

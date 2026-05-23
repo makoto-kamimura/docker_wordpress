@@ -27,6 +27,9 @@ platform/nginx_data/conf.d/*.conf
 /work
 /doc/task.md
 
+# Private demo app docs (sales-specific, not for public repo)
+/doc/demo-apps-sales.md
+
 # OS
 .DS_Store
 Thumbs.db

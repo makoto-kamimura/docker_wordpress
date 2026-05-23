@@ -74,11 +74,12 @@ done
 
 ```bash
 # ① ディレクトリ作成・権限設定 (初回のみ)
-#    nginx コンテナ (uid=101) が conf.d へテンプレートを書き込めるよう準備
+#    nginx コンテナ (uid=101) が conf.d・certs を読み書きできるよう準備する
 sudo ./scripts/init-dirs.sh
 
 # ② ACME チャレンジ用に nginx を先に起動
-sudo docker compose up -d nginx
+#    (デモアプリも使う場合は -f docker-compose.demo.yml を必ず追加)
+sudo docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d nginx
 
 # ③ Let's Encrypt 証明書を発行
 #    --entrypoint="" で renew ループを無効にして certonly を直接実行
@@ -89,17 +90,20 @@ sudo docker compose run --rm --entrypoint="" certbot certbot certonly \
   --agree-tos --no-eff-email \
   -d "$(grep ^PUBLIC_DOMAIN .env | cut -d= -f2)"
 
-# ④ 証明書を nginx コンテナ (uid=101) が読めるよう権限設定
-#    certbot は root で証明書を作成するため chown が必要
-sudo chown -R 101:101 nginx_data/certs/live nginx_data/certs/archive
+# ④ 証明書を nginx コンテナ (uid=101) が読めるよう権限設定し直す
+#    (certbot は root で証明書を作成するため init-dirs.sh を再実行)
+sudo ./scripts/init-dirs.sh
 
-# ⑤ 本番 Nginx 設定をドメインで実体化
-sed "s/__DOMAIN__/$(grep ^PUBLIC_DOMAIN .env | cut -d= -f2)/g" \
-  nginx_conf/conf.d/default.conf.public > nginx_data/conf.d/default.conf
-
-# ⑥ 全サービス起動
-sudo docker compose up -d
+# ⑤ 全サービス起動
+sudo docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
 ```
+
+> **`nginx_data/conf.d/default.conf` の扱いについて**
+>
+> このファイルは nginx コンテナが起動時に `nginx_conf/conf.d/default.conf.template` から
+> 自動生成する。手動で root 所有のままファイルを作成・上書きしないこと（コンテナが
+> Permission denied で起動不能になる）。設定を変更する場合は
+> `nginx_conf/conf.d/default.conf.template` を編集すること。
 
 ### 3. WordPress 初回構築 (wp-cli 自動化)
 
@@ -120,11 +124,42 @@ ADMIN_EMAIL=you@example.com \
 
 `https://<your-domain>/wp-admin/` でログイン。
 
+## 🔄 git pull 後の安全な再起動手順
+
+```bash
+cd docker_wordpress/platform
+
+# 1. 最新コードを取得
+git pull --ff-only
+
+# 2. 権限を正規化 (root で作業した後の権限ズレをリセット)
+sudo ./scripts/init-dirs.sh
+
+# 3. イメージ更新 + 全サービス再起動
+sudo docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --remove-orphans
+```
+
+> **ショートカット**: `scripts/deploy.sh` はステップ 2〜3 を自動実行する。
+> `sudo REF=origin/main ./scripts/deploy.sh`
+
+### nginx の設定を変更したい場合
+
+```bash
+# 変更する場所: nginx_conf/conf.d/default.conf.template (バージョン管理下)
+$EDITOR nginx_conf/conf.d/default.conf.template
+
+# 変更を反映 (コンテナ再起動で自動的にテンプレートが再展開される)
+sudo docker compose -f docker-compose.yml -f docker-compose.demo.yml restart nginx
+```
+
+> **やってはいけないこと**: `nginx_data/conf.d/default.conf` を root で直接編集すると
+> nginx が Permission denied で起動不能になる。このファイルはコンテナが自動生成する。
+
 ## 🛠 運用コマンド早見表
 
 ```bash
-# サービス起動 / 停止
-sudo docker compose up -d
+# サービス起動 / 停止 (デモアプリあり)
+sudo docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
 sudo docker compose down
 
 # 個別 profile
@@ -137,7 +172,7 @@ sudo docker compose --profile cli  run --rm wpcli wp plugin list
 crontab -e   # 0 3 * * * /path/to/backup-db.sh
 
 # デプロイ
-REF=origin/main ./scripts/deploy.sh
+sudo REF=origin/main ./scripts/deploy.sh
 # あるいは GitHub Actions の Run workflow から
 ```
 

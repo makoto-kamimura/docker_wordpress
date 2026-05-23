@@ -55,11 +55,20 @@ log "  previous=${PREV_SHA}  new=${NEW_SHA}"
 
 # 3. docker compose pull / up
 cd "${PLATFORM_DIR}"
+
+# nginx_data/conf.d と certs の権限を毎回リセット (root で作業した後の権限ズレを防ぐ)
+log "Fixing nginx_data permissions..."
+"${SCRIPT_DIR}/init-dirs.sh"
+
 log "Pulling images..."
 docker compose pull --quiet
 
+DEMO_OVERRIDE=""
+[ -f docker-compose.demo.yml ] && DEMO_OVERRIDE="-f docker-compose.demo.yml"
+
 log "Recreating services..."
-docker compose up -d --remove-orphans
+# shellcheck disable=SC2086
+docker compose -f docker-compose.yml ${DEMO_OVERRIDE} up -d --remove-orphans
 
 # 4. ヘルスチェック
 log "Health check (${HEALTH_URL}, timeout=${HEALTH_TIMEOUT}s)..."
