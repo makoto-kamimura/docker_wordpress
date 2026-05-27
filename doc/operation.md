@@ -230,193 +230,214 @@ b. プラグイン: [WPS Hide Login](https://wordpress.org/plugins/wps-hide-logi
 
 ```bash
 cd platform/
-cp docker-compose.demo.yml.template docker-compose.demo.yml
+# docker-compose.demo.yml は既に存在するため、新規なら以下でテンプレをコピー:
+# cp docker-compose.demo.yml.template docker-compose.demo.yml
 ```
 
-毎回 `-f` 指定が面倒なら環境変数で固定:
+毎回 `-f` 指定が面倒なら `.env` に追記して固定:
 ```bash
-export COMPOSE_FILE=docker-compose.yml:docker-compose.demo.yml
+echo 'COMPOSE_FILE=docker-compose.yml:docker-compose.demo.yml' >> .env
 ```
 
-### 7.2 サブドメインの準備 (DNS / ワイルドカード証明書)
+### 7.2 新しいデモアプリを追加する — 安全な手順
 
-デモアプリは個別サブドメイン (`todo.example.com`, `lp.example.com` …) で公開する。最初のデモを追加する前に DNS と証明書方針を決めておく。
+> **⚠️ 必ず下記の順番で実施すること。**  
+> nginx は起動時に `nginx_data/conf.d/` 内の全 conf ファイルを検証する。証明書が存在しない conf を置いておくと nginx が起動しない。
 
-#### 7.2.1 DNS の設計
+```
+1. DNS A レコード設定
+2. SSL 証明書取得 (certbot)
+3. nginx サブドメイン conf を配置
+4. docker-compose.demo.yml にサービス追記
+5. コンテナ起動 (docker compose up -d)
+6. nginx リロード (nginx -s reload)
+7. WordPress Works に登録
+```
 
-|              | A レコードを個別に作る                                        | ワイルドカード A レコード                                |
-| ------------ | ------------------------------------------------------------- | -------------------------------------------------------- |
-| レコード     | `todo.example.com A xx.xx.xx.xx` を毎回追加                   | `*.example.com A xx.xx.xx.xx` を 1 つ                    |
-| 増設の手間   | 1 サブドメインごとに DNS 設定が必要                           | DNS は最初の 1 回のみ                                    |
-| 証明書       | HTTP-01 (`certbot --webroot`) でサブドメインごとに発行可能   | DNS-01 + ワイルドカード証明書が必要                     |
-| 推奨         | 公開するデモが固定で数個 (~5)                                 | デモを頻繁に増減する場合                                 |
+#### Step 1 — DNS A レコードの設定
 
-> ルートドメイン (`example.com` → WordPress) は別に A レコードが必要。
+| 方式 | レコード | 備考 |
+| --- | --- | --- |
+| 個別 (推奨) | `<sub>.makoto-kamimura.com A 162.43.21.45` を追加 | HTTP-01 チャレンジで証明書発行可能 |
+| ワイルドカード | `*.makoto-kamimura.com A 162.43.21.45` を 1 つ | DNS-01 + ワイルドカード証明書が必要 |
 
-#### 7.2.2 個別 A レコード方式の証明書発行
-
-サブドメインごとに HTTP-01 で発行する。DNS が当サーバを向いていることを `dig todo.<取得したドメイン>` で確認した上で:
-
+DNS 伝播確認:
 ```bash
-sudo docker compose run --rm certbot certonly --webroot \
-  --webroot-path=/usr/share/nginx/html \
-  -d todo.<取得したドメイン>
+dig <sub>.makoto-kamimura.com
+# または
+nslookup <sub>.makoto-kamimura.com
 ```
 
-複数まとめて `-d` を並べることも可能:
+#### Step 2 — SSL 証明書の取得
+
+**nginx が稼働中 (webroot 方式、推奨):**
 ```bash
-sudo docker compose run --rm certbot certonly --webroot \
-  --webroot-path=/usr/share/nginx/html \
-  -d todo.<取得したドメイン> -d lp.<取得したドメイン>
+cd platform/
+docker compose -f docker-compose.yml -f docker-compose.demo.yml run --rm certbot certonly \
+  --webroot --webroot-path=/usr/share/nginx/html \
+  --email m.kamimura.apple@gmail.com --agree-tos --no-eff-email \
+  -d <sub>.makoto-kamimura.com
 ```
 
-成功すると `nginx_data/certs/live/<サブドメイン>/{fullchain,privkey}.pem` に格納される。
-更新は同梱 certbot コンテナが 6 時間ごとに `certbot renew` を実行するので自動。
-
-#### 7.2.3 ワイルドカード証明書方式 (DNS-01)
-
-> DNS-01 はサーバから DNS API を叩いて TXT レコードを書く必要がある。DNS プロバイダ対応の certbot プラグインを入れるか、手動 (`--manual`) で実施する。
-
-**手動の場合 (簡易):**
+**nginx が停止中 (standalone 方式):**
 ```bash
-sudo docker compose run --rm certbot certonly --manual \
-  --preferred-challenges=dns \
-  -d "*.<取得したドメイン>" -d "<取得したドメイン>"
-```
-表示された TXT レコードを DNS に登録 → `dig _acme-challenge.<取得したドメイン> TXT` で伝播確認 → Enter で続行。
-証明書は `nginx_data/certs/live/<ドメイン>/{fullchain,privkey}.pem` に格納される (ワイルドカード 1 枚で全サブドメインをカバー)。
-
-> **注意**: `--manual` モードは自動更新できない。本番でワイルドカードを使う場合は DNS プロバイダ用プラグイン (`certbot-dns-route53`, `certbot-dns-cloudflare` 等) を入れた certbot イメージに差し替える。
-
-#### 7.2.4 Nginx テンプレートの選択
-
-[7.3](#73-デモアプリを-1-つ追加する) で使う `demo-app.conf.template` は、デフォルトで以下のパスを参照している:
-```
-/etc/nginx/certs/live/__SUBDOMAIN__/fullchain.pem
-/etc/nginx/certs/live/__SUBDOMAIN__/privkey.pem
+docker run --rm -p 80:80 \
+  -v /path/to/platform/nginx_data/certs:/etc/letsencrypt \
+  certbot/certbot:v2.11.0 certonly --standalone \
+  --email m.kamimura.apple@gmail.com --agree-tos --no-eff-email \
+  -d <sub>.makoto-kamimura.com
 ```
 
-* 個別 A レコード方式 → そのまま `__SUBDOMAIN__` をサブドメイン FQDN に置換すれば一致する。
-* ワイルドカード方式   → 全サブドメインで同じ証明書を参照する。テンプレ内の `ssl_certificate` パスを `/etc/nginx/certs/live/<ベースドメイン>/...` に書き換えて使う。
-
-#### 7.2.5 サブドメイン一覧の確認
+証明書は `platform/nginx_data/certs/live/<sub>.makoto-kamimura.com/` に格納される。
 
 ```bash
-# 現在 Nginx に登録されているサブドメイン
-grep -hE '^\s*server_name ' ./nginx_data/conf.d/*.conf | awk '{print $2}' | sed 's/;//' | sort -u
-
-# 取得済み証明書の一覧
-ls ./nginx_data/certs/live/
+# 発行確認
+ls platform/nginx_data/certs/live/
 ```
 
-#### 7.2.6 Nginx 全体の有効性確認
+#### Step 3 — nginx サブドメイン設定を配置
 
-新しい `*.conf` を置いた後、reload する前に構文チェックする:
 ```bash
-sudo docker compose exec nginx nginx -t
+cd platform/
+
+# テンプレートをコピーしてプレースホルダを一括置換
+cp nginx_conf/conf.d/demo-app.conf.template nginx_data/conf.d/<appname>.conf
+sed -i \
+  -e 's/__SUBDOMAIN__/<sub>.makoto-kamimura.com/g' \
+  -e 's/__SERVICE__/demo-<appname>/g' \
+  -e 's/__PORT__/3000/g' \
+  nginx_data/conf.d/<appname>.conf
+
+# API + フロント分離構成の場合は /api ブロックを手動追記
 ```
 
-`syntax is ok` / `test is successful` を確認してから `nginx -s reload`。
+構文チェック (コンテナが起動中の場合):
+```bash
+docker compose exec nginx nginx -t
+```
 
-### 7.3 デモアプリを 1 つ追加する
+#### Step 4 — docker-compose.demo.yml にサービス追記
 
-例: TODO アプリを `todo.<取得したドメイン>` で公開する。
+`platform/docker-compose.demo.yml` の `services:` ブロックに追記する。
 
-1. **アプリのソース配置**
-    ```bash
-    mkdir -p ../app/demo-todo
-    # Dockerfile / ソースを ../app/demo-todo/ に置く
-    ```
+```yaml
+  # ---------------------------------------------------------------------------
+  # <appname> デモ
+  # 公開 URL : https://<sub>.makoto-kamimura.com
+  # Nginx conf: nginx_data/conf.d/<appname>.conf
+  # ---------------------------------------------------------------------------
+  demo-<appname>:
+    build:
+      context: ../app/<appname>
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+    expose:
+      - "3000"
+    restart: unless-stopped
+    networks:
+      - proxy_network    # ← 必須。これがないと nginx が起動時に host not found エラー
+```
 
-2. **`docker-compose.demo.yml` にサービスを追記**
+DB が必要な場合は専用 internal ネットワークも追加:
+```yaml
+    networks:
+      - proxy_network
+      - demo_<appname>_backend
 
-    `demo-todo` ブロックを編集して `image:` / `command:` / `expose:` を実装に合わせる。
-    **`ports:` は書かない** (ホストにポートを開けない=必ず Nginx 経由にする)。
+  demo-<appname>-db:
+    image: postgres:16-alpine
+    networks:
+      - demo_<appname>_backend    # proxy_network には接続しない
 
-3. **Nginx 用サブドメイン設定を生成**
+# ファイル末尾の networks:/volumes: ブロックにも追記
+networks:
+  proxy_network:      # 既存定義 (追記不要)
+  demo_<appname>_backend:
+    driver: bridge
+    internal: true
+```
 
-    公開環境 (Let's Encrypt):
-    ```bash
-    cp ./nginx_conf/conf.d/demo-app.conf.template ./nginx_data/conf.d/todo.conf
-    sudo vi ./nginx_data/conf.d/todo.conf
-    ```
-    vim 内で:
-    ```
-    :%s/__SUBDOMAIN__/todo.<取得したドメイン>/g
-    :%s/__SERVICE__/demo-todo/g
-    :%s/__PORT__/3000/g
-    :wq
-    ```
-
-    ローカル検証 (HTTP のみ):
-    ```bash
-    cp ./nginx_conf/conf.d/demo-app.conf.local.template ./nginx_data/conf.d/todo.local.conf
-    sudo vi ./nginx_data/conf.d/todo.local.conf
-    # :%s/__SUBDOMAIN__/todo.localhost/g など
-    ```
-    `*.localhost` は多くの OS で 127.0.0.1 に解決される。されない場合は `/etc/hosts` に `127.0.0.1 todo.localhost` を追記。
-
-4. **証明書発行** (公開環境のみ)
-
-    DNS で `todo.<取得したドメイン>` が当サーバを指していることを確認した上で:
-    ```bash
-    sudo docker compose run --rm certbot certonly --webroot \
-      --webroot-path=/usr/share/nginx/html \
-      -d todo.<取得したドメイン>
-    ```
-
-5. **起動と反映**
-    ```bash
-    sudo docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d demo-todo
-    sudo docker compose restart nginx
-    # もしくは
-    sudo docker compose exec nginx nginx -s reload
-    ```
-
-6. **WordPress (Works) にリンクを登録**
-
-    `wp-admin > Works > 新規追加` → サイドの **Demo / Repository** ボックスで:
-    - `Demo URL` … `https://todo.<取得したドメイン>/`
-    - `Demo ボタンラベル` … 任意 (空ならデフォルト `Open live demo →`)
-    - `Repository URL` … 任意
-
-    公開すると Works カード/作品詳細ページに **● Open live demo →** ボタンが表示される。
-
-### 7.4 動作確認
+#### Step 5 — コンテナ起動
 
 ```bash
-# サービスが起動しているか
-sudo docker compose -f docker-compose.yml -f docker-compose.demo.yml ps
+cd platform/
 
-# Nginx から内部疎通 (200 が返れば OK)
-sudo docker compose exec nginx \
-  curl -sS -o /dev/null -w "%{http_code}\n" http://demo-todo:3000/
+# 初回ビルド & 起動 (--build は Dockerfile を使う場合のみ)
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build demo-<appname>
+```
 
-# 外部から HTTPS 疎通
-curl -sS -o /dev/null -w "%{http_code}\n" https://todo.<取得したドメイン>/
+> `docker compose up -d` は変更があったサービスのみコンテナを再作成する。既存サービスに `proxy_network` への接続を追加した場合も同様に再作成される。
+
+#### Step 6 — nginx に反映 (停止なし)
+
+```bash
+# 構文チェック
+docker compose exec nginx nginx -t
+
+# 設定リロード (接続を切らずに反映)
+docker compose exec nginx nginx -s reload
+```
+
+#### Step 7 — WordPress Works に登録
+
+```
+wp-admin > Works > 新規追加
+  タイトル: アプリ名
+  Demo URL: https://<sub>.makoto-kamimura.com/
+  Demo button label: Open live demo →  (省略可)
+  Repository URL: https://github.com/...  (省略可)
+```
+
+### 7.3 動作確認
+
+```bash
+cd platform/
+
+# 1. コンテナ状態確認
+docker compose -f docker-compose.yml -f docker-compose.demo.yml ps
+
+# 2. nginx からコンテナへの疎通確認 (200 が返れば OK)
+docker compose exec nginx \
+  curl -sS -o /dev/null -w "%{http_code}\n" http://demo-<appname>:3000/
+
+# 3. 外部から HTTPS 疎通確認
+curl -sS -o /dev/null -w "%{http_code}\n" \
+  https://<sub>.makoto-kamimura.com/
+
+# 4. ModSecurity のブロック確認 (403 の場合)
+docker compose logs nginx 2>&1 | grep -i "<appname>"
 ```
 
 ### 7.4 デモアプリの削除
 
 ```bash
-sudo docker compose -f docker-compose.yml -f docker-compose.demo.yml stop demo-todo
-sudo docker compose -f docker-compose.yml -f docker-compose.demo.yml rm -f demo-todo
-sudo rm ./nginx_data/conf.d/todo.conf
-sudo docker compose restart nginx
+cd platform/
+
+# コンテナ停止 & 削除
+docker compose -f docker-compose.yml -f docker-compose.demo.yml stop demo-<appname>
+docker compose -f docker-compose.yml -f docker-compose.demo.yml rm -f demo-<appname>
+
+# nginx conf を削除して nginx にリロード
+rm nginx_data/conf.d/<appname>.conf
+docker compose exec nginx nginx -s reload
+
 # 必要なら証明書も削除
-sudo docker compose run --rm certbot delete --cert-name todo.<取得したドメイン>
+docker compose run --rm certbot delete --cert-name <sub>.makoto-kamimura.com
 ```
 
 WordPress 側は対象 Work を `ゴミ箱` へ。
 
-### 7.5 注意点
+### 7.5 注意点と既知の問題
 
 | 項目 | 内容 |
 | --- | --- |
-| ポート公開 | デモコンテナは `ports:` を書かない。ホスト側に穴が開き Nginx (WAF) を回避する経路ができてしまう。 |
-| ネットワーク名 | `docker-compose.demo.yml` は `external: docker_wordpress_proxy_network` を参照している。compose プロジェクト名 (`docker_wordpress`) と一致させること。 |
-| ModSecurity | サブドメインにも CRS が適用される。デモアプリで誤検知が出る場合は `nginx_data/modsec-rules/` でルールを調整。 |
-| 証明書 | 1 サブドメイン 1 証明書。ワイルドカード証明書を使う場合は DNS-01 チャレンジに切り替える。 |
+| **cert 優先の原則** | `nginx_data/conf.d/<name>.conf` を置く**前**に certbot で証明書を発行する。証明書が存在しないと nginx が起動しない。 |
+| **proxy_network への接続** | デモサービスに `networks: [proxy_network]` が漏れると nginx 起動時に `host not found in upstream` エラー。設定後は `docker compose up -d` でコンテナを再作成すること。 |
+| **ポート公開禁止** | `ports:` を書かない。Nginx (WAF) を回避する直接経路ができる。 |
+| **CRS ルール ID** | `nginx_data/modsec-rules/` に追記する独自ルールは `id:9500000+` 番台を使う。`9001xxx`〜`9009xxx` は CRS 予約済み。 |
+| **ModSecurity 誤検知** | デモアプリで 403 が出る場合は `nginx logs` で ModSecurity の `id` を確認し `REQUEST-900-*.conf` に除外ルールを追記。 |
+| **docker compose restart と up の違い** | `restart` はプロセスを再起動するだけ。ネットワーク/ボリューム設定変更の反映には `up -d` が必要。 |
 
 ## 8. バックアップ運用
 
@@ -763,4 +784,196 @@ GitHub 側に登録する Secrets:
 `Actions → Deploy → Run workflow` で `ref` (デフォルト `origin/main`) を指定して実行。`concurrency: deploy` で同時実行禁止。失敗時のロールバックは `deploy.sh` 側で自動。
 
 > WordPress プラグインのオートアップデートは `WP_AUTO_UPDATE_CORE=minor` のみ有効。プラグイン/テーマは管理画面または `wp plugin update --all` を週次 cron で。
+
+## 16. 停止なしでの設定変更 (Zero-downtime Operations)
+
+本番サイトをダウンさせずに設定を変更するための手順をまとめる。
+
+### 16.1 nginx 設定リロード (最も安全・最も頻用)
+
+`nginx -s reload` はワーカープロセスを graceful restart する。**既存の接続を維持したまま**新しい設定を読み込む。
+
+```bash
+cd platform/
+
+# 1. 設定ファイルを編集 (nginx_data/conf.d/*.conf など)
+
+# 2. 構文チェック (必須)
+docker compose exec nginx nginx -t
+# → "syntax is ok" / "test is successful" を確認
+
+# 3. 無停止リロード
+docker compose exec nginx nginx -s reload
+```
+
+**適用できる変更:**
+- `nginx_data/conf.d/` の conf ファイル追加・編集・削除
+- `nginx_data/modsec-rules/` の ModSecurity ルール変更
+- Let's Encrypt 証明書の更新 (certbot が自動実行)
+- `cloudflare-realip.conf` の追加
+
+**注意**: `nginx_data/conf.d/` への conf 追加は、参照する upstream コンテナが起動し `proxy_network` に接続されていることを先に確認すること。
+
+### 16.2 デモコンテナの追加・更新 (nginx への影響なし)
+
+新しいデモサービスを追加または更新する場合、nginx への影響を最小にしながら適用できる。
+
+```bash
+cd platform/
+
+# Step A: 新しい conf を追加する前に証明書を確認
+ls nginx_data/certs/live/
+
+# Step B: compose にサービスを追記してコンテナを起動
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d demo-<appname>
+
+# Step C: nginx conf を配置して構文チェック
+cp nginx_conf/conf.d/demo-app.conf.template nginx_data/conf.d/<appname>.conf
+# (プレースホルダ置換後)
+docker compose exec nginx nginx -t
+
+# Step D: nginx リロード
+docker compose exec nginx nginx -s reload
+```
+
+### 16.3 既存コンテナの設定変更 (ネットワーク / 環境変数 / ボリューム)
+
+compose 定義のネットワーク・環境変数・ボリュームを変更した場合、コンテナの**再作成**が必要。`docker compose up -d` は変更差分があるサービスのみ再作成する。
+
+```bash
+cd platform/
+
+# compose 定義を変更後:
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+```
+
+> `docker compose restart` は**再作成しない**。ネットワーク接続の変更などは反映されない。
+
+**サービス別の影響:**
+
+| サービス | 再作成時の影響 | ダウンタイム |
+|---|---|---|
+| デモアプリ (demo-*-api/web) | コンテナ停止→起動 (数秒) | ほぼなし (nginx が 502 を瞬間的に返す可能性) |
+| nginx | コンテナ停止→起動 (〜10秒) | **停止あり** → §16.5 参照 |
+| wordpress | コンテナ停止→起動 (〜5秒) | nginx が 502 を一時的に返す |
+| db / redis | **極力再作成しない** | データへのアクセス不可 |
+
+### 16.4 nginx コンテナ自体の再起動が必要な場合
+
+nginx コンテナを再起動しなければならない変更 (イメージ更新、compose の nginx ブロック変更など) は、停止時間が数十秒発生する。できるだけ深夜・低トラフィック時間帯に実施する。
+
+```bash
+cd platform/
+
+# 事前確認: 現在の状態を記録
+docker compose ps
+
+# nginx のみ再作成 (他サービスは継続)
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --no-deps nginx
+
+# または restart (設定変更の反映には不十分だが、プロセス再起動のみなら)
+docker compose restart nginx
+```
+
+**nginx 再起動前の必須チェックリスト:**
+1. `nginx_data/certs/live/` に **すべての** server_name に対応する証明書が存在するか
+2. `proxy_network` に接続すべきコンテナが全て起動・接続済みか
+3. `nginx -t` が `syntax is ok` を返すか
+
+```bash
+# チェックコマンド
+# 1. 証明書確認
+ls nginx_data/certs/live/
+grep -hE 'ssl_certificate ' nginx_data/conf.d/*.conf | awk '{print $2}' | sed 's/;//'
+
+# 2. proxy_network 接続確認
+docker network inspect docker_wordpress_proxy_network \
+  --format '{{range .Containers}}{{.Name}} {{end}}'
+
+# 3. 設定検証 (一時コンテナで実行)
+docker run --rm \
+  --network docker_wordpress_proxy_network \
+  --network docker_wordpress_frontend_network \
+  -v "$(pwd)/nginx_data/conf.d:/etc/nginx/conf.d" \
+  -v "$(pwd)/nginx_data/certs:/etc/nginx/certs:ro" \
+  -v "$(pwd)/nginx_data/modsec-rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf:/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf:ro" \
+  -v "$(pwd)/nginx_data/modsec-rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf:/etc/modsecurity.d/owasp-crs/rules/RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf:ro" \
+  -v "$(pwd)/nginx_conf/conf.d/default.conf.template:/etc/nginx/templates/conf.d/default.conf.template:ro" \
+  -e SERVER_NAME=makoto-kamimura.com \
+  -e BACKEND=http://wordpress:80 \
+  -e PARANOIA=1 -e ANOMALY_INBOUND=10 -e ANOMALY_OUTBOUND=5 \
+  --entrypoint="sh" \
+  owasp/modsecurity-crs:nginx-alpine \
+  -c "for f in /docker-entrypoint.d/*.sh; do sh \$f 2>/dev/null; done; nginx -t 2>&1"
+```
+
+### 16.5 nginx クラッシュ時の復旧フロー
+
+nginx が Restarting ループに入った場合:
+
+```bash
+cd platform/
+
+# 1. エラーを確認
+docker logs docker_wordpress-nginx-1 2>&1 | tail -5
+
+# よくあるエラーと対処
+# ----------------------------------------------------------------
+# "Rule id: XXXXXXX is duplicated"
+#   → nginx_data/modsec-rules/ のカスタムルール ID が CRS と重複
+#   → ID を 9500000+ 番台に変更
+#
+# "host not found in upstream 'demo-xxx'"
+#   → そのサービスが proxy_network に未接続
+#   → docker compose up -d でそのサービスを再作成
+#   → または nginx_data/conf.d/<name>.conf を一時削除して nginx を起動させる
+#
+# "cannot load certificate .../fullchain.pem"
+#   → SSL 証明書が存在しない
+#   → certbot で証明書を発行してから nginx を再起動
+# ----------------------------------------------------------------
+
+# 2. 該当 conf を一時退避して nginx を先に起動させる (トリアージ)
+mv nginx_data/conf.d/<problem>.conf /tmp/
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d nginx
+# → nginx が起動したら問題の原因を修正して conf を戻す
+mv /tmp/<problem>.conf nginx_data/conf.d/
+docker compose exec nginx nginx -t && docker compose exec nginx nginx -s reload
+
+# 3. 権限エラーの場合 (nginx uid=101 が conf.d を書けない)
+sudo ./scripts/init-dirs.sh
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d nginx
+```
+
+### 16.6 証明書の手動更新・確認
+
+certbot コンテナが自動更新を担うが、手動で確認・更新したい場合:
+
+```bash
+cd platform/
+
+# 現在の証明書の有効期限を確認
+docker compose run --rm certbot certificates
+
+# 手動更新 (有効期限が 30 日未満の証明書のみ更新される)
+docker compose run --rm certbot renew \
+  --webroot --webroot-path=/usr/share/nginx/html
+
+# 更新後に nginx にリロード
+docker compose exec nginx nginx -s reload
+```
+
+### 16.7 変更種別ごとのクイックリファレンス
+
+| やりたい変更 | コマンド | ダウンタイム |
+|---|---|---|
+| nginx conf の追加・編集・削除 | `nginx -t && nginx -s reload` | **なし** |
+| ModSecurity ルールの変更 | `nginx -t && nginx -s reload` | **なし** |
+| デモアプリの追加 (compose + conf) | `up -d demo-<new>` → `nginx -s reload` | **なし** |
+| デモアプリの env/network 変更 | `up -d demo-<name>` | 数秒 |
+| デモアプリのイメージ更新 | `up -d --build demo-<name>` | 数秒 |
+| nginx コンテナ自体の再起動 | `up -d --no-deps nginx` | **10〜30 秒** |
+| nginx compose 定義変更 | `up -d nginx` | **10〜30 秒** |
+| SSL 証明書取得 (新サブドメイン) | `certbot certonly --webroot ...` → `nginx -s reload` | **なし** (webroot 方式) |
+| SSL 証明書取得 (nginx 停止中) | `certbot certonly --standalone` → `up -d nginx` | nginx 停止中 |
 

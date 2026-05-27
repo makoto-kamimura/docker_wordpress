@@ -21,94 +21,112 @@ Docker Compose 上にプロダクション運用に耐える WordPress スタッ
                 └──────────────────────────────────────┘
                               │ 443 / 80
                               ▼
-                  ╔═════════════════════════╗
-                  ║   nginx (modsec + CRS)  ║   frontend_network (bridge)
-                  ╚═════════════════════════╝
-                              │ http://wordpress:80
-                              ▼
-                  ┌─────────────────────────┐
-                  │   wordpress (Apache)    │   ─────────────── frontend
-                  │   + custom php.ini      │
-                  └─────────────────────────┘
-                       │ db:3306    │ redis:6379
-                       ▼            ▼
-                  ┌──────────────────────────────────┐
-                  │      backend_network             │   internal: true
-                  │   (外部疎通不可 / nginx 不可視)   │
-                  │  ┌──────────┐    ┌────────────┐  │
-                  │  │ mariadb  │    │  redis     │  │
-                  │  │ 10.11    │    │  7.4 (auth)│  │
-                  │  └──────────┘    └────────────┘  │
-                  │       ▲                          │
-                  │       │ (profile=admin)          │
-                  │  ┌──────────────┐                │
-                  │  │ phpmyadmin   │ 127.0.0.1:8888 │
-                  │  └──────────────┘                │
-                  │       ▲                          │
-                  │       │ (profile=cli)            │
-                  │  ┌──────────────┐                │
-                  │  │ wpcli        │                │
-                  │  └──────────────┘                │
-                  └──────────────────────────────────┘
+          ╔══════════════════════════════════════════════════╗
+          ║   nginx (OWASP ModSecurity + CRS)               ║
+          ║   makoto-kamimura.com       → wordpress:80      ║
+          ║   sales.makoto-kamimura.com → demo-sales-*      ║
+          ║   inventory.m-k.com         → demo-inventory-*  ║
+          ╚══════════╤══════════════════════════╤═══════════╝
+                     │ frontend_network          │ proxy_network
+                     ▼                           ▼
+          ┌──────────────────────┐  ┌───────────────────────────────┐
+          │   wordpress (Apache) │  │  demo-sales-api     :3000     │
+          │   PHP 8.3 + Redis OC │  │  demo-sales-web     :3001     │
+          └────────┬──────┬──────┘  │  demo-inventory-api :8000     │
+          db:3306  │      │ redis:  │  demo-inventory-web :3001     │
+                   ▼      ▼ 6379   │  demo-static        :80       │
+      ╔═══════════════════════════╗ │  demo-todo          :3000     │
+      ║  backend_network          ║ └───────────────────────────────┘
+      ║  (internal: true)         ║        │                │
+      ║  ┌─────────────────────┐  ║  demo_sales_backend   demo_inventory_backend
+      ║  │ MariaDB 10.11 LTS   │  ║  (internal: true)     (internal: true)
+      ║  └─────────────────────┘  ║  demo-sales-db(PG)    demo-inventory-db(MySQL)
+      ║  ┌─────────────────────┐  ║
+      ║  │ Redis 7.4 (auth)    │  ║
+      ║  └─────────────────────┘  ║
+      ║  ← phpmyadmin (admin)     ║  127.0.0.1:8888 (SSH tunnel)
+      ║  ← wpcli      (cli)       ║
+      ╚═══════════════════════════╝
 
-  常駐: db / wordpress / redis / nginx / certbot
-  profile=admin       : phpmyadmin (127.0.0.1:8888 のみ)
-  profile=stats       : webalizer  (アクセスログ解析)
-  profile=cli         : wpcli      (wp-cli 経由の自動化)
-  profile=monitoring  : uptime-kuma (127.0.0.1:3001 のみ、SSH トンネル管理)
+  常駐 (docker-compose.yml)   : db / wordpress / redis / nginx / certbot
+  デモ (docker-compose.demo.yml): demo-sales-{db,api,web} / demo-inventory-{db,api,web}
+                                  demo-static / demo-todo
+  profile=admin               : phpmyadmin (127.0.0.1:8888 のみ)
+  profile=stats               : webalizer  (アクセスログ解析)
+  profile=cli                 : wpcli      (wp-cli 経由の自動化)
+  profile=monitoring          : uptime-kuma (127.0.0.1:3001 のみ、SSH トンネル管理)
 ```
 
 ## 3. ディレクトリ構成
 
 ```
 docker_wordpress/
-├── app/                                # アプリケーション層 (永続データ)
+├── app/                                     # アプリケーション層 (永続データ + デモアプリ)
 │   ├── wordpress/
-│   │   ├── db_data/                    # 旧 MySQL 5.7 データ (移行用に温存)
-│   │   ├── db_data_mariadb/            # MariaDB 10.11 のデータ
-│   │   └── wordpress_data/             # wp-content / wp-config 等
+│   │   ├── db_data/                         # 旧 MySQL 5.7 データ (移行用に温存)
+│   │   ├── db_data_mariadb/                 # MariaDB 10.11 のデータ
+│   │   └── wordpress_data/                  # wp-content / wp-config 等
 │   ├── log_data/
-│   │   ├── db_logs/                    # MariaDB のログ
-│   │   └── wordpress_logs/             # Apache のログ
-│   ├── demo-static/                    # 静的サブドメインデモ
-│   └── demo-todo/                      # 動的サブドメインデモ
-├── platform/                           # 基盤層 (Docker / Nginx / 自動化)
-│   ├── docker-compose.yml              # 全サービスの定義 (9 サービス + profile)
-│   ├── docker-compose.demo.yml.template  # サブドメインデモ追加用テンプレ
-│   ├── .env                            # 本番用 secrets (git 管理外)
-│   ├── .env.example                    # テンプレート
-│   ├── docker_conf/
-│   │   └── Dockerfile.nginx-modsecurity  # 自前ビルド用 (現状未使用)
-│   ├── nginx_conf/                     # Nginx 設定 (テンプレ)
+│   │   ├── db_logs/                         # MariaDB のログ
+│   │   └── wordpress_logs/                  # Apache のログ
+│   ├── demo-static/                         # 静的 HTML デモ (nginx:alpine)
+│   ├── demo-todo/                           # Node.js Todo SPA デモ
+│   ├── docker_sales_management/             # Rails API + Next.js 売上管理デモ
+│   │   └── app/{api,web}/Dockerfile
+│   └── docker_inventory_management/         # Laravel API + Next.js 在庫管理デモ
+│       ├── app/{backend,web}/
+│       └── platform/docker/Dockerfile
+├── platform/                                # 基盤層 (Docker / Nginx / 自動化)
+│   ├── docker-compose.yml                   # コアサービス (9 サービス + profile)
+│   ├── docker-compose.demo.yml              # デモアプリサービス (8 サービス)
+│   ├── .env                                 # 本番用 secrets (git 管理外)
+│   ├── .env.example                         # テンプレート
+│   ├── nginx_conf/                          # Nginx 設定テンプレート (バージョン管理)
 │   │   └── conf.d/
-│   │       ├── default.conf.public            # 本番 (HTTP→HTTPS + HSTS 等)
-│   │       ├── default.conf.local             # ローカル (自己署名)
-│   │       ├── cloudflare-realip.conf         # CF 経由時の real_ip 補正
-│   │       ├── demo-app.conf.template         # サブドメインデモ用
+│   │       ├── default.conf.template        # 本番用 (envsubst で展開 → nginx_data/conf.d/)
+│   │       ├── default.conf.public          # 手動コピー用 本番設定
+│   │       ├── default.conf.local           # ローカル (自己署名)
+│   │       ├── cloudflare-realip.conf       # CF 経由時の real_ip 補正
+│   │       ├── demo-app.conf.template       # サブドメインデモ設定テンプレ
 │   │       └── demo-app.conf.local.template
-│   ├── nginx_data/                     # 実行時マウント (証明書 / conf / WAF ルール)
-│   │   ├── conf.d/                     # 実適用される .conf
-│   │   ├── certs/                      # Let's Encrypt 証明書
-│   │   ├── html/                       # ACME challenge 用 + 静的フォールバック
-│   │   └── modsec-rules/               # CRS exclusion (BEFORE/AFTER)
+│   ├── nginx_data/                          # 実行時マウント (コンテナが読む)
+│   │   ├── conf.d/                          # 実際に nginx が読む .conf
+│   │   │   ├── default.conf                 # WordPress 本体 (envsubst 自動生成)
+│   │   │   ├── sales.conf                   # sales.makoto-kamimura.com
+│   │   │   ├── inventory.conf               # inventory.makoto-kamimura.com
+│   │   │   ├── modsecurity.conf             # ModSecurity 有効化 (自動生成)
+│   │   │   ├── logging.conf                 # アクセスログ設定 (自動生成)
+│   │   │   └── demo-banner.inc              # デモ用ナビバー sub_filter include
+│   │   ├── certs/live/                      # Let's Encrypt 証明書
+│   │   │   ├── makoto-kamimura.com/
+│   │   │   ├── sales.makoto-kamimura.com/
+│   │   │   └── inventory.makoto-kamimura.com/
+│   │   ├── html/                            # ACME challenge 用 webroot
+│   │   └── modsec-rules/                    # CRS exclusion ルール
+│   │       ├── REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf  # id:9500100 (カスタム)
+│   │       └── RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf
 │   ├── php_conf/
-│   │   └── uploads.ini                 # PHP upload / OPcache / セッション設定
+│   │   └── uploads.ini                      # PHP upload / OPcache / セッション設定
 │   ├── log_data/
-│   │   └── nginx_logs/                 # Nginx + ModSecurity ログ
+│   │   └── nginx_logs/                      # Nginx + ModSecurity ログ
 │   └── scripts/
-│       ├── backup-db.sh                # mariadb-dump + gzip + 世代管理
-│       ├── initial-setup.sh            # wp-cli で初回構築を冪等実行
-│       ├── update-cloudflare-ips.sh    # CF IP レンジ自動更新
-│       └── deploy.sh                   # backup → pull → up → health → 自動 rollback
+│       ├── init-dirs.sh                     # ディレクトリ作成 + nginx uid=101 向け権限設定
+│       ├── backup-db.sh                     # mariadb-dump + gzip + 世代管理
+│       ├── initial-setup.sh                 # wp-cli で初回構築を冪等実行
+│       ├── update-cloudflare-ips.sh         # CF IP レンジ自動更新
+│       └── deploy.sh                        # backup → pull → up → health → 自動 rollback
 ├── .github/
 │   └── workflows/
-│       ├── ci.yml                      # compose validate / shellcheck / Trivy
-│       └── deploy.yml                  # workflow_dispatch で SSH デプロイ
+│       ├── ci.yml                           # compose validate / shellcheck / Trivy
+│       └── deploy.yml                       # workflow_dispatch で SSH デプロイ
 ├── doc/
-│   ├── design.md                       # 本ファイル
-│   ├── operation.md                    # 利用方法
-│   ├── task.md                         # 本番化タスク (進捗付き)
-│   └── demo-apps.md                    # サブドメインデモ詳細
+│   ├── design.md                            # 本ファイル
+│   ├── operation.md                         # 利用方法
+│   ├── task.md                              # 本番化タスク (進捗付き)
+│   ├── demo-apps.md                         # デモアプリ汎用追加手順
+│   ├── demo-apps-sales.md                   # sales.makoto-kamimura.com 詳細
+│   └── demo-apps-inventory.md              # inventory.makoto-kamimura.com 詳細
+├── history.md                               # 開発・障害履歴
 ├── README.md
 └── LICENSE
 ```
@@ -117,19 +135,36 @@ docker_wordpress/
 
 ## 4. サービス構成
 
+### 4.0 コアサービス一覧
+
 [platform/docker-compose.yml](../platform/docker-compose.yml) に 9 サービスを定義 (常駐 5 + profile 起動 4)。
 
 | サービス | イメージ | profile | 役割 | 公開ポート |
 | --- | --- | --- | --- | --- |
-| `db`         | `mariadb:10.11.13`                | 常駐         | DB                          | (内部のみ)         |
-| `wordpress`  | `wordpress:6.7.2-php8.3-apache`   | 常駐         | WordPress 本体               | (内部のみ)         |
-| `redis`      | `redis:7.4.2-alpine`              | 常駐         | Object Cache                | (内部のみ)         |
-| `nginx`      | `owasp/modsecurity-crs:nginx-alpine` | 常駐      | リバースプロキシ + WAF       | `80`, `443`        |
-| `certbot`    | `certbot/certbot:v2.11.0`         | 常駐         | Let's Encrypt 更新ループ     | -                  |
-| `phpmyadmin` | `phpmyadmin/phpmyadmin:5.2.1`     | `admin`      | DB 管理                     | `127.0.0.1:8888`   |
-| `webalizer`  | `toughiq/webalizer:latest`        | `stats`      | アクセスログ解析             | (内部のみ)         |
-| `wpcli`      | `wordpress:cli-2.10.0-php8.3`     | `cli`        | 自動化 / 運用                | (内部のみ)         |
-| `uptime-kuma`| `louislam/uptime-kuma:1.23.13`    | `monitoring` | セルフホスト外形監視         | `127.0.0.1:3001`   |
+| `db`         | `mariadb:10.11.13`                   | 常駐         | DB                          | (内部のみ)         |
+| `wordpress`  | `wordpress:6.7.2-php8.3-apache`      | 常駐         | WordPress 本体               | (内部のみ)         |
+| `redis`      | `redis:7.4.2-alpine`                 | 常駐         | Object Cache                | (内部のみ)         |
+| `nginx`      | `owasp/modsecurity-crs:nginx-alpine` | 常駐         | リバースプロキシ + WAF       | `80`, `443`        |
+| `certbot`    | `certbot/certbot:v2.11.0`            | 常駐         | Let's Encrypt 更新ループ     | -                  |
+| `phpmyadmin` | `phpmyadmin/phpmyadmin:5.2.1`        | `admin`      | DB 管理                     | `127.0.0.1:8888`   |
+| `webalizer`  | `toughiq/webalizer:latest`           | `stats`      | アクセスログ解析             | (内部のみ)         |
+| `wpcli`      | `wordpress:cli-2.10.0-php8.3`        | `cli`        | 自動化 / 運用                | (内部のみ)         |
+| `uptime-kuma`| `louislam/uptime-kuma:1.23.13`       | `monitoring` | セルフホスト外形監視         | `127.0.0.1:3001`   |
+
+### 4.0.1 デモアプリサービス一覧
+
+[platform/docker-compose.demo.yml](../platform/docker-compose.demo.yml) に定義 (常駐 8 サービス)。
+
+| サービス | イメージ | 役割 | ネットワーク |
+| --- | --- | --- | --- |
+| `demo-sales-db`        | `pgvector/pgvector:pg16`          | 売上管理 DB (PostgreSQL) | `demo_sales_backend` |
+| `demo-sales-api`       | build (Rails API)                 | 売上管理 API             | `proxy_network`, `demo_sales_backend` |
+| `demo-sales-web`       | build (Next.js)                   | 売上管理 フロントエンド   | `proxy_network`, `demo_sales_backend` |
+| `demo-inventory-db`    | `mysql:8.0`                       | 在庫管理 DB (MySQL)      | `demo_inventory_backend` |
+| `demo-inventory-api`   | build (Laravel API)               | 在庫管理 API             | `proxy_network`, `demo_inventory_backend` |
+| `demo-inventory-web`   | build (Next.js)                   | 在庫管理 フロントエンド   | `proxy_network`, `demo_inventory_backend` |
+| `demo-static`          | `nginx:alpine`                    | 静的 HTML デモ           | `proxy_network` |
+| `demo-todo`            | `node:20-alpine`                  | Todo SPA デモ            | `proxy_network` |
 
 ### 4.1 db (MariaDB 10.11 LTS)
 
@@ -167,9 +202,19 @@ docker_wordpress/
 * **イメージ**: `owasp/modsecurity-crs:nginx-alpine`
 * **PARANOIA=1**, `ANOMALY_INBOUND=10` / `ANOMALY_OUTBOUND=5` を環境変数で設定
 * **CRS 例外**: `nginx_data/modsec-rules/` の 2 ファイルを CRS のプレースホルダにファイル単位マウント
-    - `REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf` — WordPress exclusion package 有効化 + admin-ajax / post.php / customize / wp-json / media-upload / wp-cron への範囲限定 `ctl:ruleRemove*`
+    - `REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf` — `/wp-json/tty/v1/` エンドポイント向け XSS/SQLi 検出除外 (`id:9500100`)
     - `RESPONSE-999-EXCLUSION-RULES-AFTER-CRS.conf` — site-health / wp-json / update.php への OUTBOUND 例外
-* **Nginx 公開設定 (`default.conf.public`)**:
+
+> **⚠️ CRS ルール ID の予約帯について**
+> OWASP CRS は下記 ID 帯を各アプリ専用として使用している。カスタムルールはこれらと重複してはならない。
+> - `9001xxx` : Drupal exclusions (`REQUEST-903.9001-DRUPAL-EXCLUSION-RULES.conf`)
+> - `9002xxx` : WordPress exclusions (`REQUEST-903.9002-WORDPRESS-EXCLUSION-RULES.conf`)
+> - `9003xxx` : Nextcloud, `9004xxx` : DokuWiki, `9005xxx` : cPanel, `9006xxx` : XenForo
+>
+> **独自ルールは `9500000+` 番台を使用すること** (例: 現在の `id:9500100`)。
+> 重複すると nginx 起動時に `Rule id: XXXXXX is duplicated` エラーが発生しサービスが起動しない。
+
+* **Nginx 公開設定 (`default.conf.template`)**:
     - 80 → 443 の 301 リダイレクト
     - HTTP/2 enabled, TLSv1.2/1.3, Mozilla intermediate cipher, OCSP stapling, `session_tickets off`
     - セキュリティヘッダ: HSTS / X-Content-Type-Options / X-Frame-Options / Referrer-Policy / Permissions-Policy
@@ -179,7 +224,9 @@ docker_wordpress/
 * **Cloudflare 連携**: `cloudflare-realip.conf` を同梱 (全 IPv4/IPv6 + `CF-Connecting-IP`)、`scripts/update-cloudflare-ips.sh` で月次更新可
 * **ハードニング**: `cap_drop: ALL` + 最小限 `cap_add`、`security_opt: no-new-privileges`
 * **公開ポート**: ホストの 80, 443 (内部 8080, 8443)
-* **ネットワーク**: `frontend_network` のみ
+* **ネットワーク**: `frontend_network` (コア定義) + `proxy_network` (`docker-compose.demo.yml` オーバーライドで追加)
+
+> **proxy_network の追加方法**: `docker-compose.demo.yml` の nginx サービスブロックに `networks: [proxy_network]` を追記するオーバーライドで実現している。`docker-compose.yml` 本体は変更しない。
 
 ### 4.5 certbot
 
@@ -224,28 +271,54 @@ docker_wordpress/
 
 | ネットワーク | driver | internal | 接続サービス |
 | --- | --- | --- | --- |
-| `frontend_network` | `bridge` | false | `nginx` / `wordpress` / `uptime-kuma` |
-| `backend_network`  | `bridge` | **true** | `db` / `redis` / `wordpress` / `phpmyadmin` / `wpcli` |
+| `frontend_network`        | `bridge` | false       | `nginx`, `wordpress`, `(uptime-kuma)` |
+| `backend_network`         | `bridge` | **true**    | `db`, `redis`, `wordpress`, `(phpmyadmin)`, `(wpcli)` |
+| `proxy_network`           | `bridge` | false       | `nginx`(demo.yml), `demo-sales-api/web`, `demo-inventory-api/web`, `demo-static`, `demo-todo` |
+| `demo_sales_backend`      | `bridge` | **true**    | `demo-sales-db`, `demo-sales-api`, `demo-sales-web` |
+| `demo_inventory_backend`  | `bridge` | **true**    | `demo-inventory-db`, `demo-inventory-api`, `demo-inventory-web` |
 
-* `backend_network` は `internal: true` のため、外部 IP との通信不可。
-* `db` / `redis` は `frontend_network` に参加しない → Nginx からも直接到達できない。
-* `wordpress` だけが両ネットワークに属するブリッジ役。
+**接続ルール:**
+* `backend_network` は `internal: true` — DB/Redis は外部からも nginx からも直接到達不可。
+* `proxy_network` は `docker-compose.demo.yml` で定義。nginx はこのネットワーク経由でデモコンテナに転送する。
+* `wordpress` のみ `frontend_network` + `backend_network` の両方に属するブリッジ役。
+* デモアプリの DB (`demo-*-db`) は `proxy_network` に接続しない (`internal: true` の専用ネットワークのみ) — nginx から直接到達不可。
+* デモアプリを新規追加する際は **必ず `proxy_network` に接続**すること。接続し忘れると nginx 起動時に `host not found in upstream` エラーが発生する。
 
 ## 6. ボリュームと bind マウント
 
-bind マウントは `platform/` を基準とした相対パス。名前付きボリューム (`redis_data` / `uptime_kuma_data`) は Docker 管理領域。
+bind マウントは `platform/` を基準とした相対パス。名前付きボリュームは Docker 管理領域。
 
-| ボリューム | 種別 | ホスト/ Docker | コンテナ側 |
+**コアサービス**
+
+| ボリューム | 種別 | ホスト側 | コンテナ側 |
 | --- | --- | --- | --- |
 | `db_data` | bind | `../app/wordpress/db_data_mariadb` | `/var/lib/mysql` |
 | `wordpress_data` | bind | `../app/wordpress/wordpress_data` | `/var/www/html` |
 | `db_logs` | bind | `../app/log_data/db_logs` | `/var/log/mysql` |
 | `wordpress_logs` | bind | `../app/log_data/wordpress_logs` | `/var/log/apache2` |
-| `nginx_logs` | bind | `./log_data/nginx_logs` | `/var/log/nginx` |
+| `nginx_logs` | named | - | `/var/log/nginx` |
 | `redis_data` | named | - | `/data` |
 | `uptime_kuma_data` | named | - | `/app/data` |
 
-* 個別 bind: `./nginx_data/conf.d` / `./nginx_data/certs` / `./nginx_data/html` / `./nginx_data/modsec-rules/*.conf` / `./php_conf/uploads.ini` / `./scripts`
+nginx 個別 bind マウント:
+- `./nginx_data/conf.d` → `/etc/nginx/conf.d` (実適用 conf / 自動生成ファイルも含む)
+- `./nginx_data/certs` → `/etc/nginx/certs:ro`
+- `./nginx_data/html` → `/usr/share/nginx/html` (ACME webroot)
+- `./nginx_data/modsec-rules/REQUEST-900-*.conf` → `/etc/modsecurity.d/owasp-crs/rules/REQUEST-900-*.conf:ro`
+- `./nginx_data/modsec-rules/RESPONSE-999-*.conf` → `/etc/modsecurity.d/owasp-crs/rules/RESPONSE-999-*.conf:ro`
+- `./nginx_conf/conf.d/default.conf.template` → `/etc/nginx/templates/conf.d/default.conf.template:ro`
+
+> `nginx_data/conf.d/` はコンテナ起動時の envsubst テンプレート展開先でもある。`modsecurity.conf` / `logging.conf` / `default.conf` はコンテナが自動生成するため、root で手動上書きしてはならない（Permission denied で起動不可になる）。
+
+**デモアプリ**
+
+| ボリューム | 種別 | ホスト側 | コンテナ側 |
+| --- | --- | --- | --- |
+| `demo_sales_db_data` | named | - | `/var/lib/postgresql/data` |
+| `demo_inventory_db_data` | named | - | `/var/lib/mysql` |
+| demo-static html | bind | `../app/demo-static` | `/usr/share/nginx/html:ro` |
+| demo-todo app | bind | `../app/demo-todo` | `/app` |
+| demo-inventory-api | bind | `../app/docker_inventory_management/app/backend` | `/var/www` |
 
 ## 7. シークレット管理
 
@@ -304,17 +377,82 @@ db / wordpress (Apache) は実行時に複数の書き込み先 (`/var/lib/mysql
 * **パフォーマンス**: emoji / dashicons 除去、ブロックスタイル条件付き dequeue、画像 lazy + async decode、JS `defer`、Google Fonts `display=swap` + preconnect
 * ライセンス: MIT
 
-## 12. 拡張ポイント
+## 12. デモアプリ構成 (docker-compose.demo.yml)
+
+### 12.1 設計方針
+
+* **メイン compose を一切変更しない** — nginx への `proxy_network` 追加も `docker-compose.demo.yml` 内の nginx オーバーライドで行う。
+* **デモコンテナはホスト側ポートを公開しない** — `expose:` のみ。必ず Nginx (WAF) を経由する。
+* **DB は専用の `internal: true` ネットワークで隔離** — `proxy_network` に接続しない。
+* **SSL 証明書は必ず事前取得** — `nginx_data/conf.d/<name>.conf` を置く前に certbot で取得する。証明書が存在しないと nginx が起動しない。
+
+### 12.2 ルーティング設計
+
+```
+URL                                        nginx upstream
+─────────────────────────────────────────  ────────────────────────────────
+https://makoto-kamimura.com/               wordpress:80
+https://sales.makoto-kamimura.com/         demo-sales-web:3001
+https://sales.makoto-kamimura.com/api      demo-sales-api:3000
+https://inventory.makoto-kamimura.com/     demo-inventory-web:3001
+https://inventory.makoto-kamimura.com/api  demo-inventory-api:8000
+```
+
+### 12.3 稼働中デモアプリ詳細
+
+**sales.makoto-kamimura.com** ([doc/demo-apps-sales.md](./demo-apps-sales.md))
+
+| レイヤ | サービス名 | 技術 | ポート |
+|---|---|---|---|
+| フロントエンド | `demo-sales-web` | Next.js | 3001 |
+| API | `demo-sales-api` | Ruby on Rails | 3000 |
+| DB | `demo-sales-db` | PostgreSQL + pgvector | — |
+
+**inventory.makoto-kamimura.com** ([doc/demo-apps-inventory.md](./demo-apps-inventory.md))
+
+| レイヤ | サービス名 | 技術 | ポート |
+|---|---|---|---|
+| フロントエンド | `demo-inventory-web` | Next.js | 3001 |
+| API | `demo-inventory-api` | Laravel (PHP 8.x) | 8000 |
+| DB | `demo-inventory-db` | MySQL 8.0 | — |
+
+**その他**
+
+| サービス | 技術 | 役割 |
+|---|---|---|
+| `demo-static` | nginx:alpine | 静的 HTML / LP サンプル |
+| `demo-todo` | node:20-alpine | Todo SPA デモ |
+
+### 12.4 コンテナ再作成が必要なケース
+
+以下を変更した場合、**実行中コンテナには自動反映されない**。`docker compose up -d` でコンテナを再作成する必要がある:
+
+| 変更内容 | 再作成が必要なサービス |
+|---|---|
+| `networks:` に新ネットワークを追加/削除 | そのサービス |
+| `environment:` の変数追加/変更 | そのサービス |
+| `volumes:` のマウント変更 | そのサービス |
+| `image:` / `build:` の変更 | そのサービス + `--build` フラグ |
+
+```bash
+# 設定変更を反映（影響サービスのみ再作成）
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+```
+
+`docker compose restart` はプロセスを再起動するだけでネットワーク/ボリューム設定は変わらない。
+
+## 14. 拡張ポイント
 
 | やりたいこと | 着手箇所 |
 | --- | --- |
-| サブドメインで別アプリを公開 | [docker-compose.demo.yml.template](../platform/docker-compose.demo.yml.template) と [demo-app.conf.template](../platform/nginx_conf/conf.d/demo-app.conf.template) を複製 ([demo-apps.md](./demo-apps.md)) |
-| Cloudflare 前段化 | `cloudflare-realip.conf` を `nginx_data/conf.d/` にコピー + reload |
+| サブドメインで別アプリを公開 | [demo-apps.md](./demo-apps.md) の手順に従い `docker-compose.demo.yml` と `nginx_data/conf.d/` に追加 |
+| Cloudflare 前段化 | `cloudflare-realip.conf` を `nginx_data/conf.d/` にコピー + `nginx -s reload` |
 | 監視通知 | Uptime Kuma 管理画面で Slack/Discord webhook を登録 |
-| CRS の誤検知抑制 | `nginx_data/modsec-rules/*.conf` に範囲限定 `ctl:` ルール追記 |
+| CRS の誤検知抑制 | `nginx_data/modsec-rules/*.conf` に範囲限定 `ctl:` ルール追記 (**ID は 9500000+ 番台**を使用) |
 | プラグイン一括更新 | `docker compose --profile cli run --rm wpcli wp plugin update --all` を週次 cron |
+| 新サブドメイン証明書 | `certbot certonly --webroot` で取得後、nginx conf を配置し `nginx -s reload` |
 
-## 13. 動作確認環境
+## 15. 動作確認環境
 
 * macOS Sequoia (Apple Silicon) — Docker Desktop 4.x
 * Ubuntu 22.04 LTS / 24.04 LTS — Docker Engine 27.x
