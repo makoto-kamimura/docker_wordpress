@@ -53,7 +53,11 @@ git -c advice.detachedHead=false checkout "${REF}"
 NEW_SHA="$(git rev-parse HEAD)"
 log "  previous=${PREV_SHA}  new=${NEW_SHA}"
 
-# 3. docker compose pull / up
+# 3. ホスト環境セットアップ (fail2ban / SSH ポート)
+log "Running host setup..."
+"${SCRIPT_DIR}/setup-host.sh"
+
+# 4. docker compose pull / up
 cd "${PLATFORM_DIR}"
 
 # nginx_data/conf.d と certs の権限を毎回リセット (root で作業した後の権限ズレを防ぐ)

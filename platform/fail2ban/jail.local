@@ -1,0 +1,47 @@
+[DEFAULT]
+# ブロック期間・検知ウィンドウ・試行上限
+bantime  = 24h
+findtime = 10m
+maxretry = 5
+banaction = iptables-multiport
+
+# 自分の IP は除外（SSH 接続元を必ず記載）
+# 複数 IP はスペース区切りで追加可
+ignoreip = 127.0.0.1/8 ::1 <ADMIN_IP>
+
+# ============================================================
+# SSH ブルートフォース対策
+# ============================================================
+[sshd]
+enabled  = true
+port     = __SSH_PORT__
+filter   = sshd
+logpath  = /var/log/auth.log
+maxretry = 3
+bantime  = 168h
+
+# ============================================================
+# ModSecurity WAF: 繰り返し攻撃を BAN
+# nginx_logs は docker-compose でホストの
+#   platform/log_data/nginx_logs/ にマウント済み
+# ============================================================
+[nginx-modsecurity]
+enabled  = true
+port     = http,https
+filter   = nginx-modsecurity
+logpath  = %(here)s/../log_data/nginx_logs/error.log
+maxretry = 20
+findtime = 5m
+bantime  = 1h
+
+# ============================================================
+# WordPress ログインページへのブルートフォース
+# ============================================================
+[nginx-wp-login]
+enabled  = true
+port     = http,https
+filter   = nginx-wp-login
+logpath  = %(here)s/../log_data/nginx_logs/access.log
+maxretry = 10
+findtime = 5m
+bantime  = 24h

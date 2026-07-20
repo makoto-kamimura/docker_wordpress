@@ -72,7 +72,16 @@ services:
       WORDPRESS_DB_USER: ${MYSQL_USER}
       WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
       WORDPRESS_TABLE_PREFIX: ${WP_TABLE_PREFIX:-wp_}
-      # Salt は getenv で参照する (PHP 経由)
+      # wp-config.php が WORDPRESS_AUTH_KEY 等を直接参照するので正しい値を渡す
+      WORDPRESS_AUTH_KEY: ${WP_AUTH_KEY}
+      WORDPRESS_SECURE_AUTH_KEY: ${WP_SECURE_AUTH_KEY}
+      WORDPRESS_LOGGED_IN_KEY: ${WP_LOGGED_IN_KEY}
+      WORDPRESS_NONCE_KEY: ${WP_NONCE_KEY}
+      WORDPRESS_AUTH_SALT: ${WP_AUTH_SALT}
+      WORDPRESS_SECURE_AUTH_SALT: ${WP_SECURE_AUTH_SALT}
+      WORDPRESS_LOGGED_IN_SALT: ${WP_LOGGED_IN_SALT}
+      WORDPRESS_NONCE_SALT: ${WP_NONCE_SALT}
+      # Redis 設定は WORDPRESS_CONFIG_EXTRA から getenv で取得
       WP_AUTH_KEY: ${WP_AUTH_KEY}
       WP_SECURE_AUTH_KEY: ${WP_SECURE_AUTH_KEY}
       WP_LOGGED_IN_KEY: ${WP_LOGGED_IN_KEY}
@@ -85,23 +94,23 @@ services:
       WP_REDIS_PORT: "6379"
       WP_REDIS_PASSWORD: ${REDIS_PASSWORD}
       WORDPRESS_CONFIG_EXTRA: |
-        define('DISALLOW_FILE_EDIT', true);
-        define('FORCE_SSL_ADMIN', true);
-        define('WP_AUTO_UPDATE_CORE', 'minor');
-        define('WP_DEBUG', false);
-        define('WP_DEBUG_DISPLAY', false);
-        define('AUTH_KEY',         getenv('WP_AUTH_KEY'));
-        define('SECURE_AUTH_KEY',  getenv('WP_SECURE_AUTH_KEY'));
-        define('LOGGED_IN_KEY',    getenv('WP_LOGGED_IN_KEY'));
-        define('NONCE_KEY',        getenv('WP_NONCE_KEY'));
-        define('AUTH_SALT',        getenv('WP_AUTH_SALT'));
-        define('SECURE_AUTH_SALT', getenv('WP_SECURE_AUTH_SALT'));
-        define('LOGGED_IN_SALT',   getenv('WP_LOGGED_IN_SALT'));
-        define('NONCE_SALT',       getenv('WP_NONCE_SALT'));
-        define('WP_REDIS_HOST',     getenv('WP_REDIS_HOST'));
-        define('WP_REDIS_PORT',     (int) getenv('WP_REDIS_PORT'));
-        define('WP_REDIS_PASSWORD', getenv('WP_REDIS_PASSWORD'));
-        define('WP_CACHE',          true);
+        if (!defined('DISALLOW_FILE_EDIT'))   define('DISALLOW_FILE_EDIT', true);
+        if (!defined('FORCE_SSL_ADMIN'))       define('FORCE_SSL_ADMIN', true);
+        if (!defined('WP_AUTO_UPDATE_CORE'))   define('WP_AUTO_UPDATE_CORE', 'minor');
+        if (!defined('WP_DEBUG'))              define('WP_DEBUG', false);
+        if (!defined('WP_DEBUG_DISPLAY'))      define('WP_DEBUG_DISPLAY', false);
+        if (!defined('AUTH_KEY'))              define('AUTH_KEY',         getenv('WP_AUTH_KEY'));
+        if (!defined('SECURE_AUTH_KEY'))       define('SECURE_AUTH_KEY',  getenv('WP_SECURE_AUTH_KEY'));
+        if (!defined('LOGGED_IN_KEY'))         define('LOGGED_IN_KEY',    getenv('WP_LOGGED_IN_KEY'));
+        if (!defined('NONCE_KEY'))             define('NONCE_KEY',        getenv('WP_NONCE_KEY'));
+        if (!defined('AUTH_SALT'))             define('AUTH_SALT',        getenv('WP_AUTH_SALT'));
+        if (!defined('SECURE_AUTH_SALT'))      define('SECURE_AUTH_SALT', getenv('WP_SECURE_AUTH_SALT'));
+        if (!defined('LOGGED_IN_SALT'))        define('LOGGED_IN_SALT',   getenv('WP_LOGGED_IN_SALT'));
+        if (!defined('NONCE_SALT'))            define('NONCE_SALT',       getenv('WP_NONCE_SALT'));
+        if (!defined('WP_REDIS_HOST'))         define('WP_REDIS_HOST',     getenv('WP_REDIS_HOST'));
+        if (!defined('WP_REDIS_PORT'))         define('WP_REDIS_PORT',     (int) getenv('WP_REDIS_PORT'));
+        if (!defined('WP_REDIS_PASSWORD'))     define('WP_REDIS_PASSWORD', getenv('WP_REDIS_PASSWORD'));
+        if (!defined('WP_CACHE'))              define('WP_CACHE',          true);
         if (!empty($$_SERVER['HTTP_X_FORWARDED_PROTO']) && $$_SERVER['HTTP_X_FORWARDED_PROTO']==='https') { $$_SERVER['HTTPS']='on'; }
         if (!empty($$_SERVER['HTTP_X_FORWARDED_FOR'])) { $$_SERVER['REMOTE_ADDR'] = trim(explode(',', $$_SERVER['HTTP_X_FORWARDED_FOR'])[0]); }
     expose:

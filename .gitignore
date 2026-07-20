@@ -25,10 +25,26 @@ platform/nginx_data/conf.d/*.conf
 
 # Temporary
 /work
-/doc/task.md
 
-# Private demo app docs (sales-specific, not for public repo)
-/doc/demo-apps-sales.md
+# Personal blog content (spec/design/ops notes, not part of the WordPress setup itself)
+/docs/
+/design/
+/platform/docs/
+/history.md
+
+# Local backups / working copies (may contain live secrets - never commit)
+*.bak
+*.bak.*
+app/backup/
+
+# Demo apps (personal deployments layered on top of the base WordPress stack,
+# not part of the "set up WordPress" repo itself)
+/app/docker_*/
+/platform/docker-compose.demo.yml
+/platform/scripts/create-blog-posts.php
+/platform/scripts/expo-control-watcher.sh
+/platform/scripts/expo-demo.sh
+/platform/scripts/gen-expo-branding.py
 
 # OS
 .DS_Store
