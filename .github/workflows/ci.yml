@@ -2,8 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # このリポジトリのデフォルトブランチは master。
+    # main を指定していた間は push 由来の実行が 1 件も発生していなかった。
+    branches: [master]
   pull_request:
+  # 結果をすぐ確認したい時に手動実行できるようにする
+  workflow_dispatch:
   schedule:
     # 週次でイメージ脆弱性スキャンを再実行 (毎週月曜 03:15 UTC)
     - cron: "15 3 * * 1"
