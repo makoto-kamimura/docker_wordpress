@@ -29,7 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ludeeus/action-shellcheck@2.0.0
+      # サードパーティ action はタグを書き換えられる可能性があるため SHA で固定する
+      - uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
         env:
           SHELLCHECK_OPTS: -e SC1091
         with:
@@ -53,7 +54,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Trivy
-        uses: aquasecurity/trivy-action@0.24.0
+        # 2026-03-19 のサプライチェーン攻撃で 0.34.2 以前のタグは悪意あるコミットへ
+        # force-push された。復旧時に旧タグは削除されたため @0.24.0 は解決できず、
+        # このジョブは 2026-07 以降ずっと Set up job で失敗していた。
+        # 攻撃はタグを書き換える手口だったので、タグではなく SHA で固定する。
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           image-ref: ${{ matrix.image }}
           severity: CRITICAL,HIGH
