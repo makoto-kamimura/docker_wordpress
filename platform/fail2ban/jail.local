@@ -5,12 +5,16 @@ findtime = 10m
 maxretry = 5
 banaction = iptables-multiport
 
-# 自分の IP は除外（SSH 接続元を必ず記載）
-# 複数 IP はスペース区切りで追加可
-ignoreip = 127.0.0.1/8 ::1 <ADMIN_IP>
+# BAN 対象から除外する IP。
+#   172.19.0.0/16 … Docker ブリッジ網（wp-cron 等の内部通信）
+# 管理者の接続元 IP と本サーバのグローバル IP は、本リポジトリが public のため
+# ここには書かず platform/host-secrets.env の FAIL2BAN_IGNOREIP_EXTRA から注入する。
+# （setup-host.sh が __IGNOREIP_EXTRA__ を置換してから /etc/fail2ban へ配置）
+ignoreip = 127.0.0.1/8 ::1 172.19.0.0/16 __IGNOREIP_EXTRA__
 
 # ============================================================
 # SSH ブルートフォース対策
+# port は host-secrets.env の SSH_PORT から注入される
 # ============================================================
 [sshd]
 enabled  = true
@@ -25,23 +29,49 @@ bantime  = 168h
 # nginx_logs は docker-compose でホストの
 #   platform/log_data/nginx_logs/ にマウント済み
 # ============================================================
+#
+# bantime を 1h から 24h に延長した理由:
+#   45.148.10.42 は 2026-07-25〜26 に 1h BAN → 解除の十数分後に再開、を 5 回繰り返した。
+#   スキャナは BAN 解除を待って再スキャンしてくるため、1h では素通りに近い。
+# ============================================================
 [nginx-modsecurity]
 enabled  = true
 port     = http,https
 filter   = nginx-modsecurity
 logpath  = %(here)s/../log_data/nginx_logs/error.log
-maxretry = 20
-findtime = 5m
-bantime  = 1h
+maxretry = 15
+findtime = 10m
+bantime  = 24h
 
 # ============================================================
 # WordPress ログインページへのブルートフォース
+# ============================================================
+#
+# findtime を 5m から 1h に広げた理由:
+#   攻撃者は 5 分窓を避けて低速分散でくる。実ログ 15,769 件の POST に対し
+#   5m/10回 では捕捉 25 IP に留まったが、1h/15回 なら 32 IP を捕捉できる。
 # ============================================================
 [nginx-wp-login]
 enabled  = true
 port     = http,https
 filter   = nginx-wp-login
 logpath  = %(here)s/../log_data/nginx_logs/access.log
-maxretry = 10
-findtime = 5m
-bantime  = 24h
+maxretry = 15
+findtime = 1h
+bantime  = 48h
+
+# ============================================================
+# 常習犯の長期 BAN
+# 他 jail で findtime 内に maxretry 回 BAN された IP を、全ポート対象で長期 BAN。
+# logpath の /var/log/fail2ban.log は weekly ローテートのため findtime は 5d に留める。
+# ※ bantime を伸ばす場合は fail2ban.local の dbpurgeage も併せて伸ばすこと
+#   （dbpurgeage < bantime だと再起動時に BAN が失われる）
+# ============================================================
+[recidive]
+enabled   = true
+filter    = recidive
+logpath   = /var/log/fail2ban.log
+banaction = iptables-allports
+maxretry  = 3
+findtime  = 5d
+bantime   = 4w

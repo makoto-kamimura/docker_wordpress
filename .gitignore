@@ -3,6 +3,11 @@
 .env.local
 .env.*.local
 
+# Host-specific values (SSH port / admin source IP).
+# This repo is public - keep the real values out of tracked files.
+# Template: platform/host-secrets.env.example
+/platform/host-secrets.env
+
 # Application data (contents ignored, directory structure tracked via .gitkeep)
 app/wordpress/db_data/
 app/wordpress/db_data_mariadb/**
@@ -36,6 +41,7 @@ platform/nginx_data/conf.d/*.conf
 *.bak
 *.bak.*
 app/backup/
+backups/
 
 # Demo apps (personal deployments layered on top of the base WordPress stack,
 # not part of the "set up WordPress" repo itself)
