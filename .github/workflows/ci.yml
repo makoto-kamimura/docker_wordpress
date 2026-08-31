@@ -43,18 +43,32 @@ jobs:
   trivy-image-scan:
     name: Trivy image scan (${{ matrix.image }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # SARIF を code scanning へ上げるために必要
+      security-events: write
     strategy:
       fail-fast: false
       matrix:
-        image:
-          - mariadb:10.11.13
-          - wordpress:6.7.2-php8.3-apache
-          - wordpress:cli-2.10.0-php8.3
-          - owasp/modsecurity-crs:nginx-alpine
-          - redis:7.4.2-alpine
-          - certbot/certbot:v2.11.0
-          - phpmyadmin/phpmyadmin:5.2.1
-          - louislam/uptime-kuma:1.23.13
+        # slug は SARIF のファイル名と category に使う。
+        # image をそのまま使うと "/" や ":" が入って扱えないため分けている。
+        include:
+          - image: mariadb:10.11.13
+            slug: mariadb
+          - image: wordpress:6.7.2-php8.3-apache
+            slug: wordpress
+          - image: wordpress:cli-2.10.0-php8.3
+            slug: wordpress-cli
+          - image: owasp/modsecurity-crs:nginx-alpine
+            slug: modsecurity-crs
+          - image: redis:7.4.2-alpine
+            slug: redis
+          - image: certbot/certbot:v2.11.0
+            slug: certbot
+          - image: phpmyadmin/phpmyadmin:5.2.1
+            slug: phpmyadmin
+          - image: louislam/uptime-kuma:1.23.13
+            slug: uptime-kuma
     steps:
       - uses: actions/checkout@v4
       - name: Run Trivy
@@ -66,6 +80,18 @@ jobs:
         with:
           image-ref: ${{ matrix.image }}
           severity: CRITICAL,HIGH
-          exit-code: "0" # まずは収集のみ。閾値を厳しくする時は "1"
+          exit-code: "0" # ここで落とさない。検出は下の SARIF アップロードで可視化する
           ignore-unfixed: true
-          format: table
+          format: sarif
+          output: trivy-${{ matrix.slug }}.sarif
+
+      # 検出結果を Security > Code scanning に出す。
+      # ログを開かないと分からない状態だと、失敗も検出も誰にも気付かれない
+      # （実際 2026-07 以降このジョブは落ち続けていたが放置されていた）。
+      - name: Upload SARIF
+        # サードパーティ action と同様、タグではなく SHA で固定する
+        uses: github/codeql-action/upload-sarif@486fec2a3ea2626afcd8c7e9208b4f515078dd7e # codeql-bundle-v2.26.4
+        with:
+          sarif_file: trivy-${{ matrix.slug }}.sarif
+          # category を分けないと、matrix の各ジョブが互いの結果を上書きする
+          category: trivy-${{ matrix.slug }}
