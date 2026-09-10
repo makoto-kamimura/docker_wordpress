@@ -16,14 +16,11 @@
 # =====================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-REPO_DIR="$(cd "${PLATFORM_DIR}/.." && pwd)"
+# shellcheck source=lib/common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 cd "${REPO_DIR}"
 
 # .env を読み込み (PUBLIC_DOMAIN 等)
-# shellcheck source=scripts/lib/load-env.sh
-source "${SCRIPT_DIR}/lib/load-env.sh"
 if [[ -f "${PLATFORM_DIR}/.env" ]]; then
   load_env "${PLATFORM_DIR}/.env"
 fi
@@ -32,7 +29,9 @@ REF="${REF:-origin/main}"
 HEALTH_URL="${HEALTH_URL:-https://${PUBLIC_DOMAIN:-localhost}/}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-60}"
 
-log() { echo "[$(date -Iseconds)] $*"; }
+# デプロイ時とロールバック時で同じ構成を扱うため、compose の対象ファイルは一度だけ決める
+COMPOSE=(docker compose -f docker-compose.yml)
+[[ -f "${PLATFORM_DIR}/docker-compose.demo.yml" ]] && COMPOSE+=(-f docker-compose.demo.yml)
 
 PREV_SHA="$(git rev-parse HEAD)"
 
@@ -65,14 +64,10 @@ log "Fixing nginx_data permissions..."
 "${SCRIPT_DIR}/init-dirs.sh"
 
 log "Pulling images..."
-docker compose pull --quiet
-
-DEMO_OVERRIDE=""
-[ -f docker-compose.demo.yml ] && DEMO_OVERRIDE="-f docker-compose.demo.yml"
+docker compose -f docker-compose.yml pull --quiet   # 本体分のみ（デモ側は pull しない）
 
 log "Recreating services..."
-# shellcheck disable=SC2086
-docker compose -f docker-compose.yml ${DEMO_OVERRIDE} up -d --remove-orphans
+"${COMPOSE[@]}" up -d --remove-orphans
 
 # 4. ヘルスチェック
 log "Health check (${HEALTH_URL}, timeout=${HEALTH_TIMEOUT}s)..."
@@ -87,7 +82,7 @@ while :; do
     cd "${REPO_DIR}"
     git -c advice.detachedHead=false checkout "${PREV_SHA}"
     cd "${PLATFORM_DIR}"
-    docker compose up -d
+    "${COMPOSE[@]}" up -d
     exit 1
   fi
   sleep 3

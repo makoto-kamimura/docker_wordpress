@@ -18,8 +18,8 @@
 # =====================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=lib/common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 cd "${PLATFORM_DIR}"
 
 FLAG="nginx_data/certs/.reload-needed"
@@ -28,15 +28,14 @@ if [ ! -f "${FLAG}" ]; then
   exit 0
 fi
 
-echo "[$(date -Is)] 証明書の更新を検出。nginx をリロードします。"
+log "証明書の更新を検出。nginx をリロードします。"
 
 # 設定が壊れている状態で reload すると無停止のはずが失敗するため、先に検証する
 if ! docker compose exec -T nginx nginx -t; then
-  echo "[$(date -Is)] ERROR: nginx -t に失敗。リロードを中止します (フラグは残す)。"
-  exit 1
+  die "nginx -t に失敗。リロードを中止します (フラグは残す)。"
 fi
 
 docker compose exec -T nginx nginx -s reload
 rm -f "${FLAG}"
 
-echo "[$(date -Is)] リロード完了。"
+log "リロード完了。"

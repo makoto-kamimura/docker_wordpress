@@ -17,13 +17,10 @@
 # =====================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=lib/common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 FAIL2BAN_SRC="${PLATFORM_DIR}/fail2ban"
 SECRETS_FILE="${PLATFORM_DIR}/host-secrets.env"
-
-log() { echo "[$(date -Iseconds)] $*"; }
-die() { echo "[ERROR] $*" >&2; exit 1; }
 
 # ---- 0. ホスト固有設定の読み込みと検証 -------------------------------
 # 値が欠けたまま先へ進むと SSH ポートを壊して締め出される恐れがあるため、

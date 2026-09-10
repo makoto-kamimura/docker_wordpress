@@ -6,8 +6,8 @@
 # =====================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=lib/common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 OUT="${PLATFORM_DIR}/nginx_conf/conf.d/cloudflare-realip.conf"
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
@@ -15,10 +15,7 @@ trap 'rm -f "$TMP"' EXIT
 V4="$(curl -fsS https://www.cloudflare.com/ips-v4)"
 V6="$(curl -fsS https://www.cloudflare.com/ips-v6)"
 
-if [[ -z "$V4" || -z "$V6" ]]; then
-  echo "ERROR: failed to fetch Cloudflare IP lists" >&2
-  exit 1
-fi
+[[ -n "$V4" && -n "$V6" ]] || die "failed to fetch Cloudflare IP lists"
 
 {
   cat <<'EOF'
@@ -42,15 +39,18 @@ EOF
   echo "real_ip_recursive on;"
 } > "$TMP"
 
-if cmp -s "$TMP" "$OUT"; then
-  echo "[$(date -Iseconds)] No change."
+# "Generated at" 行は毎回変わるので比較から外す。含めたままだと常に差分ありと判定され、
+# IP 一覧が同じでも毎回ファイルを書き換えて nginx を reload してしまう。
+strip_ts() { grep -v '^# Generated at:' "$1" 2>/dev/null; }
+if [[ -f "$OUT" ]] && cmp -s <(strip_ts "$TMP") <(strip_ts "$OUT"); then
+  log "No change."
 else
   mv "$TMP" "$OUT"
   trap - EXIT
-  echo "[$(date -Iseconds)] Updated ${OUT}"
+  log "Updated ${OUT}"
   if docker compose -f "${PLATFORM_DIR}/docker-compose.yml" ps --status running --quiet nginx | grep -q .; then
-    docker compose -f "${PLATFORM_DIR}/docker-compose.yml" exec nginx nginx -t \
-      && docker compose -f "${PLATFORM_DIR}/docker-compose.yml" exec nginx nginx -s reload \
+    docker compose -f "${PLATFORM_DIR}/docker-compose.yml" exec -T nginx nginx -t \
+      && docker compose -f "${PLATFORM_DIR}/docker-compose.yml" exec -T nginx nginx -s reload \
       && echo "  nginx reloaded"
   fi
 fi

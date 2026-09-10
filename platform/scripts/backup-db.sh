@@ -8,13 +8,11 @@
 # =====================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=lib/common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 cd "${PLATFORM_DIR}"
 
-# .env を読み込む (MYSQL_ROOT_PASSWORD 等)
-# shellcheck source=scripts/lib/load-env.sh
-source "${SCRIPT_DIR}/lib/load-env.sh"
+# .env を読み込む (MYSQL_DATABASE 等)
 load_env ./.env
 
 BACKUP_DIR="${BACKUP_DIR:-${PLATFORM_DIR}/../app/backup}"
@@ -25,22 +23,26 @@ mkdir -p "${BACKUP_DIR}"
 
 OUT="${BACKUP_DIR}/db_${TS}.sql.gz"
 
-echo "[$(date -Iseconds)] Dumping ${MYSQL_DATABASE} -> ${OUT}"
-docker compose exec -T db sh -c \
-  "exec mariadb-dump -uroot -p\"\${MARIADB_ROOT_PASSWORD}\" \
-       --single-transaction --quick --routines --triggers \
-       --default-character-set=utf8mb4 \
-       \"\${MARIADB_DATABASE}\"" \
-  | gzip -9 > "${OUT}"
+log "Dumping ${MYSQL_DATABASE} -> ${OUT}"
+# 失敗判定は if で受ける。set -e に任せると途中で落ちたダンプが残り、
+# しかも gzip としては正常に閉じているため下の gzip -t も通ってしまう。
+if ! docker compose exec -T db sh -c \
+       "exec mariadb-dump -uroot -p\"\${MARIADB_ROOT_PASSWORD}\" \
+            --single-transaction --quick --routines --triggers \
+            --default-character-set=utf8mb4 \
+            \"\${MARIADB_DATABASE}\"" \
+     | gzip -9 > "${OUT}"; then
+  rm -f "${OUT}"
+  die "mariadb-dump failed; partial dump removed"
+fi
 
 # 整合性検査 (gzip ヘッダだけでなく中身も)
 if ! gzip -t "${OUT}"; then
-  echo "ERROR: dump verification failed for ${OUT}" >&2
   rm -f "${OUT}"
-  exit 1
+  die "dump verification failed for ${OUT}"
 fi
 
-echo "[$(date -Iseconds)] OK: $(du -h "${OUT}" | awk '{print $1}')"
+log "OK: $(du -h "${OUT}" | awk '{print $1}')"
 
 # 古い世代を削除
 find "${BACKUP_DIR}" -type f -name "db_*.sql.gz" -mtime "+${BACKUP_KEEP_DAYS}" -print -delete

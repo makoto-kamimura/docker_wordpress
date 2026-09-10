@@ -17,18 +17,11 @@
 # =====================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLATFORM_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=lib/common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 cd "${PLATFORM_DIR}"
 
-if [[ ! -f .env ]]; then
-  echo "ERROR: ${PLATFORM_DIR}/.env not found" >&2
-  exit 1
-fi
-
-# .env を読み込む
-# shellcheck source=scripts/lib/load-env.sh
-source "${SCRIPT_DIR}/lib/load-env.sh"
+# .env を読み込む（無ければ load_env がエラー終了する）
 load_env ./.env
 
 # 必須環境変数
@@ -52,15 +45,19 @@ wp() {
   docker compose --profile cli run --rm -T wpcli wp --path=/var/www/html "$@"
 }
 
-echo "[$(date -Iseconds)] Waiting for db + wordpress to be healthy..."
+log "Waiting for db + wordpress to be running..."
 docker compose up -d db wordpress
-# wp service が serve_started を待つ + db_healthy も待つ
+# 2 サービスとも running になるまで最大 120 秒待つ。
+# 待ち切れないまま進むと、後段の wp コマンドが原因の分かりにくいエラーで落ちる。
+running=0
 for _ in $(seq 1 60); do
-  if docker compose ps --status running --quiet db wordpress | wc -l | grep -q 2; then break; fi
+  running="$(docker compose ps --status running --quiet db wordpress | wc -l)"
+  (( running == 2 )) && break
   sleep 2
 done
+(( running == 2 )) || die "db / wordpress が起動しません (running=${running}/2)。docker compose ps で確認してください"
 
-echo "[$(date -Iseconds)] Checking WordPress core install state..."
+log "Checking WordPress core install state..."
 if wp core is-installed >/dev/null 2>&1; then
   echo "  -> already installed"
 else
@@ -84,7 +81,7 @@ else
   fi
 fi
 
-echo "[$(date -Iseconds)] Setting siteurl / home / locale / timezone..."
+log "Setting siteurl / home / locale / timezone..."
 wp option update siteurl "${SITE_URL}"
 wp option update home    "${SITE_URL}"
 wp option update blogname        "${SITE_TITLE}"
@@ -94,17 +91,17 @@ wp option update WPLANG "${WP_LOCALE}"        || true
 wp language core install "${WP_LOCALE}"       || true
 wp language core activate "${WP_LOCALE}"      || true
 
-echo "[$(date -Iseconds)] Setting permalink structure..."
+log "Setting permalink structure..."
 wp rewrite structure '/%postname%/' --hard
 
-echo "[$(date -Iseconds)] Activating theme ${THEME_SLUG}..."
+log "Activating theme ${THEME_SLUG}..."
 if wp theme is-installed "${THEME_SLUG}" >/dev/null 2>&1; then
   wp theme activate "${THEME_SLUG}"
 else
-  echo "  WARNING: theme '${THEME_SLUG}' not found in wp-content/themes/. Skipping."
+  warn "theme '${THEME_SLUG}' not found in wp-content/themes/. Skipping."
 fi
 
-echo "[$(date -Iseconds)] Installing + activating plugins..."
+log "Installing + activating plugins..."
 for plugin in redis-cache wps-hide-login wordfence wp-mail-smtp; do
   if wp plugin is-installed "${plugin}" >/dev/null 2>&1; then
     echo "  -> ${plugin}: already installed, activating"
@@ -115,34 +112,41 @@ for plugin in redis-cache wps-hide-login wordfence wp-mail-smtp; do
   fi
 done
 
-echo "[$(date -Iseconds)] Enabling Redis object cache..."
+log "Enabling Redis object cache..."
 if wp redis status 2>/dev/null | grep -q "Connected"; then
   echo "  -> already connected"
 else
-  wp redis enable || echo "  WARN: 'wp redis enable' failed (確認: REDIS_PASSWORD / WP_REDIS_HOST)"
+  wp redis enable || warn "'wp redis enable' failed (確認: REDIS_PASSWORD / WP_REDIS_HOST)"
 fi
 
-echo "[$(date -Iseconds)] Configuring WP Mail SMTP (skip if SMTP_HOST is empty)..."
+log "Configuring WP Mail SMTP (skip if SMTP_HOST is empty)..."
+# JSON 文字列リテラル用に \ と " をエスケープする。
+# SMTP パスワードにこれらの文字が含まれていると、素のまま埋め込んだ JSON が壊れる。
+json_str() {
+  local s="${1//\\/\\\\}"
+  printf '%s' "${s//\"/\\\"}"
+}
+
 if [[ -n "${SMTP_HOST:-}" && -n "${SMTP_USER:-}" && -n "${SMTP_PASS:-}" && -n "${SMTP_FROM_EMAIL:-}" ]]; then
   SMTP_AUTH_BOOL=$([[ "${SMTP_AUTH:-1}" == "1" ]] && echo true || echo false)
   WPMS_JSON=$(cat <<JSON
 {
   "mail": {
     "mailer": "smtp",
-    "from_email": "${SMTP_FROM_EMAIL}",
-    "from_name": "${SMTP_FROM_NAME:-}",
+    "from_email": "$(json_str "${SMTP_FROM_EMAIL}")",
+    "from_name": "$(json_str "${SMTP_FROM_NAME:-}")",
     "from_email_force": true,
     "from_name_force": true,
     "return_path": false
   },
   "smtp": {
-    "host": "${SMTP_HOST}",
+    "host": "$(json_str "${SMTP_HOST}")",
     "port": ${SMTP_PORT:-587},
-    "encryption": "${SMTP_ENCRYPTION:-tls}",
+    "encryption": "$(json_str "${SMTP_ENCRYPTION:-tls}")",
     "auth": ${SMTP_AUTH_BOOL},
     "autotls": true,
-    "user": "${SMTP_USER}",
-    "pass": "${SMTP_PASS}"
+    "user": "$(json_str "${SMTP_USER}")",
+    "pass": "$(json_str "${SMTP_PASS}")"
   }
 }
 JSON
@@ -153,7 +157,7 @@ else
   echo "  -> SMTP_HOST/USER/PASS/FROM_EMAIL のいずれかが空のため、WP Mail SMTP の自動設定はスキップ"
 fi
 
-echo "[$(date -Iseconds)] Flushing rewrite rules..."
+log "Flushing rewrite rules..."
 wp rewrite flush --hard
 
-echo "[$(date -Iseconds)] Done. Visit: ${SITE_URL}/wp-admin/"
+log "Done. Visit: ${SITE_URL}/wp-admin/"
