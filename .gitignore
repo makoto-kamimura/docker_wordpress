@@ -51,6 +51,8 @@ backups/
 /platform/scripts/expo-control-watcher.sh
 /platform/scripts/expo-demo.sh
 /platform/scripts/gen-expo-branding.py
+/platform/scripts/backup-demo-db.sh
+/platform/cron.d/demo-db-backup
 
 # OS
 .DS_Store

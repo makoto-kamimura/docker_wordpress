@@ -1,0 +1,8 @@
+# VS Code Server のアイドルセッションを週次で掃除する
+# 毎週日曜 04:00 に、24 時間以上アイドルな server-main.js を停止する。
+# 実行ログ: /var/log/vscode-server-cleanup.log
+# 手動確認: __REPO_DIR__/platform/scripts/vscode-server-cleanup.sh   （ドライラン）
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+0 4 * * 0 root IDLE_HOURS=24 __REPO_DIR__/platform/scripts/vscode-server-cleanup.sh --apply >/dev/null 2>&1

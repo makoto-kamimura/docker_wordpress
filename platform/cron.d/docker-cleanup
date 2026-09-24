@@ -1,0 +1,13 @@
+# Docker のビルドキャッシュ / dangling イメージを週次で掃除する
+# 毎週日曜 03:30 に、7 日（168h）より古いビルドキャッシュを削除する。
+#
+# ⚠️ ボリュームは対象外。docker volume prune は絶対に自動化しないこと
+#    （DB などの永続データが消えるため）。
+# ⚠️ docker image prune -a も使わない（wordpress:cli-2.10.0-php8.3 が巻き添えになる）。
+#
+# 実行ログ: /var/log/docker-cleanup.log
+# 手動確認: __REPO_DIR__/platform/scripts/docker-cleanup.sh   （ドライラン）
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+30 3 * * 0 root KEEP_HOURS=168 __REPO_DIR__/platform/scripts/docker-cleanup.sh --apply >/dev/null 2>&1

@@ -167,9 +167,9 @@ sudo docker compose --profile admin       up -d phpmyadmin   # 127.0.0.1:8888
 sudo docker compose --profile monitoring  up -d uptime-kuma  # 127.0.0.1:3001
 sudo docker compose --profile cli  run --rm wpcli wp plugin list
 
-# DB バックアップ
+# DB バックアップ (毎日 03:00 に cron で自動実行)
 ./scripts/backup-db.sh                     # 即時
-crontab -e   # 0 3 * * * /path/to/backup-db.sh
+# cron 定義は platform/cron.d/ にあり、setup-host.sh が /etc/cron.d/ へ配置する
 
 # デプロイ
 sudo REF=origin/main ./scripts/deploy.sh
@@ -203,9 +203,14 @@ docker_wordpress/
 │   ├── nginx_conf/conf.d/              # nginx テンプレ (.public / .local / cloudflare-realip)
 │   ├── nginx_data/                     # 実行時マウント (証明書 / 適用済 conf / WAF rules)
 │   ├── php_conf/uploads.ini            # PHP オーバーライド
+│   ├── cron.d/                         # cron 定義 (setup-host.sh が /etc/cron.d へ配置)
 │   └── scripts/
 │       ├── init-dirs.sh            # 初回: ディレクトリ作成・権限設定
 │       ├── backup-db.sh
+│       ├── waf-report.sh           # WAF 検知 / アクセス / fail2ban / 証明書の JSON レポート
+│       ├── access-summary.sh
+│       ├── fail2ban-status.sh
+│       ├── cert-expiry.sh
 │       ├── initial-setup.sh
 │       ├── update-cloudflare-ips.sh
 │       └── deploy.sh

@@ -1,0 +1,14 @@
+# Let's Encrypt 証明書の更新後に nginx を graceful reload する
+# 15 分おきに、certbot の --deploy-hook が置いたフラグ
+# (platform/nginx_data/certs/.reload-needed) を確認する。
+# フラグが無ければ即 exit するため、空振りのコストはほぼゼロ。
+#
+# これが無いと nginx は起動時に読み込んだ証明書を掴んだままになり、
+# certbot の更新が成功していても期限切れ証明書を配信し続ける。
+#
+# 実行ログ: /var/log/cert-reload.log
+# 手動実行: __REPO_DIR__/platform/scripts/reload-nginx-on-cert-renew.sh
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+*/15 * * * * root __REPO_DIR__/platform/scripts/reload-nginx-on-cert-renew.sh >> /var/log/cert-reload.log 2>&1

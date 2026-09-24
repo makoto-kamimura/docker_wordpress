@@ -3,6 +3,7 @@
 # ホスト環境セットアップ (idempotent)
 #   - fail2ban のインストールと設定適用
 #   - SSH ポートの変更
+#   - cron ジョブ (バックアップ・証明書リロード・掃除) の配置
 #
 # 使い方:
 #   cd platform
@@ -20,6 +21,7 @@ set -euo pipefail
 # shellcheck source=lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 FAIL2BAN_SRC="${PLATFORM_DIR}/fail2ban"
+CRON_SRC="${PLATFORM_DIR}/cron.d"
 SECRETS_FILE="${PLATFORM_DIR}/host-secrets.env"
 
 # ---- 0. ホスト固有設定の読み込みと検証 -------------------------------
@@ -150,5 +152,34 @@ else
   log "  ※ VPS 提供元のパケットフィルタも新ポートの許可が必要な場合がある。"
   log "============================================================"
 fi
+
+# ---- 4. cron ジョブをリポジトリから配置 ------------------------------
+# バックアップも証明書リロードも cron に依存しているため、ホストを作り直すと
+# 同時に失われる。定義をリポジトリに置き、ここから配る。
+#
+# cron.d のファイル内はパスを __REPO_DIR__ で書いてあり、ここで実パスに置き換える
+# (fail2ban の jail.local と同じやり方)。
+log "Installing cron jobs from repo..."
+
+for src in "${CRON_SRC}"/*; do
+  [[ -f "${src}" ]] || continue
+  name="$(basename "${src}")"
+  dst="/etc/cron.d/${name}"
+
+  sed "s|__REPO_DIR__|${REPO_DIR}|g" "${src}" > "${dst}"
+
+  # cron.d はファイル名にドットを含むと無視される。所有者とモードも固定が必要。
+  chown root:root "${dst}"
+  chmod 644 "${dst}"
+
+  # 置換漏れがあるとジョブが存在しないパスを叩き続けるため止める
+  if grep -q '__REPO_DIR__' "${dst}"; then
+    die "${dst} のプレースホルダ置換に失敗しました"
+  fi
+  log "  installed: ${dst}"
+done
+
+# cron.d は inotify で拾われるが、取りこぼした場合に備えて明示的に読み直させる
+systemctl reload cron 2>/dev/null || systemctl restart cron
 
 log "setup-host.sh done."

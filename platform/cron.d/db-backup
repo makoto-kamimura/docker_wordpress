@@ -1,0 +1,14 @@
+# WordPress の DB (MariaDB) を毎日ダンプする
+# 毎日 03:00 に mariadb-dump を実行し、gzip して app/backup/ に置く。
+# 14 日 (BACKUP_KEEP_DAYS の既定値) より古い db_*.sql.gz は自動削除される。
+#
+# ⚠️ 対象は platform/.env の MYSQL_DATABASE (wordpress) のみ。
+#
+# 03:30 の docker-cleanup とはずらしてある (ダンプは 1 秒未満で終わるため実際には重ならない)。
+#
+# 実行ログ: /var/log/wp_backup.log
+# 手動実行: __REPO_DIR__/platform/scripts/backup-db.sh
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+0 3 * * * root __REPO_DIR__/platform/scripts/backup-db.sh >> /var/log/wp_backup.log 2>&1

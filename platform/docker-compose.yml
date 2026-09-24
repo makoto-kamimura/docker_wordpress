@@ -240,6 +240,11 @@ services:
   # -------------------------------------------------------------------
   certbot:
     image: certbot/certbot:v2.11.0
+    deploy:
+      resources:
+        limits:
+          memory: ${CERTBOT_MEM_LIMIT:-128m}
+    mem_limit: ${CERTBOT_MEM_LIMIT:-128m}
     <<: *default-restart
     logging: *default-logging
     security_opt:
@@ -325,6 +330,8 @@ services:
       WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
       WORDPRESS_DB_USER: ${MYSQL_USER}
       WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
+      # wp-config.php は getenv で prefix を読むため、wordpress サービスと同じ値を渡す
+      WORDPRESS_TABLE_PREFIX: ${WP_TABLE_PREFIX:-wp_}
     volumes:
       - wordpress_data:/var/www/html
       - ./scripts:/scripts:ro
