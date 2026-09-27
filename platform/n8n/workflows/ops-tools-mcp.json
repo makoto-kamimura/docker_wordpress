@@ -1,0 +1,117 @@
+{
+  "id": "wafDetectionsMcp",
+  "name": "サーバー運用ツール (MCP)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "waf",
+        "authentication": "bearerAuth"
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "id": "f75827ce-4a89-4a0a-ad0b-39949ef87f9b",
+      "name": "MCP Server Trigger",
+      "webhookId": "79847594-88ac-40eb-ace3-dde301c8f26d"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "nginx + ModSecurity (WAF) がブロックしたリクエストを集計して JSON で返す。攻撃元 IP の上位、狙われた URI の上位、発動したルール ID の上位、直近のブロック内容が含まれる。「WAFの検知を見せて」「不審なアクセスある?」といった質問に使う。",
+        "command": "=/scripts/waf-report.sh --hours {{ Math.min(720, Math.max(1, Number.parseInt($fromAI('hours', '集計する時間範囲を時間単位で指定する。昨日なら24、直近1週間なら168。既定は24', 'number', 24), 10) || 24)) }} --limit 10 --recent {{ Math.min(50, Math.max(1, Number.parseInt($fromAI('recent', '個別のブロック内容を何件返すか。既定は10', 'number', 10), 10) || 10)) }}"
+      },
+      "type": "n8n-nodes-base.executeCommandTool",
+      "typeVersion": 1,
+      "position": [240, 220],
+      "id": "1bee65ff-47eb-4cfd-9bbe-6d7f2794f4c2",
+      "name": "waf_detections"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "nginx のアクセスログを集計して JSON で返す。リクエスト数、ステータス別の件数 (2xx/3xx/4xx/5xx)、アクセス元 IP の上位、よく叩かれたパスの上位、404 が多いパスの上位、User-Agent の上位、時間帯別の件数が含まれる。「アクセス数はどれくらい?」「404 が多いページは?」「5xx が出ていない?」「どのbotが来ている?」といった質問に使う。WAF が遮断したものだけを見たいときは waf_detections を使う。既定では Docker 内部通信 (wp-cron など) を除外し、その件数は summary.internal_requests に入る。",
+        "command": "=/scripts/access-summary.sh --hours {{ Math.min(720, Math.max(1, Number.parseInt($fromAI('hours', '集計する時間範囲を時間単位で指定する。昨日なら24、直近1週間なら168。既定は24', 'number', 24), 10) || 24)) }} --limit {{ Math.min(50, Math.max(1, Number.parseInt($fromAI('limit', '各ランキングを何件返すか。既定は10', 'number', 10), 10) || 10)) }}"
+      },
+      "type": "n8n-nodes-base.executeCommandTool",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "id": "de2c693b-3a33-46a7-befc-a2853916a69c",
+      "name": "access_summary"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "fail2ban の状況を JSON で返す。現在 BAN 中の IP 一覧と jail 別の件数、指定期間内の新規 BAN / UNBAN 件数、BAN 回数の多い IP が含まれる。「今どのIPをBANしている?」「このIPはBANされている?」「fail2banは効いている?」といった質問に使う。waf_detections の攻撃元 IP と突き合わせると、遮断が続いているのに BAN されていない IP を見つけられる。banned_source が log の場合はログの再生で求めた値で、ローテートで流れた古い BAN は含まれない。",
+        "command": "=/scripts/fail2ban-status.sh --hours {{ Math.min(720, Math.max(1, Number.parseInt($fromAI('hours', '新規BANを集計する時間範囲を時間単位で指定する。既定は24', 'number', 24), 10) || 24)) }} --limit {{ Math.min(50, Math.max(1, Number.parseInt($fromAI('limit', 'ランキングを何件返すか。既定は10', 'number', 10), 10) || 10)) }}"
+      },
+      "type": "n8n-nodes-base.executeCommandTool",
+      "typeVersion": 1,
+      "position": [240, 580],
+      "id": "a95960fb-f5ea-4c2c-a54f-c816ec43f16c",
+      "name": "fail2ban_status"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Let's Encrypt の TLS 証明書の有効期限を JSON で返す。ドメインごとの残り日数と失効日時が、残りが短い順に並ぶ。「証明書はいつまで有効?」「更新は成功している?」「失効しそうなドメインある?」といった質問に使う。certbot の自動更新が失敗していても誰も気づかないため、残り日数が 30 日を大きく下回っていれば更新が止まっている可能性が高い。",
+        "command": "=/scripts/cert-expiry.sh --warn-days {{ Math.min(365, Math.max(1, Number.parseInt($fromAI('warn_days', '残りがこの日数以下の証明書を expiring_soon として数える。既定は30', 'number', 30), 10) || 30)) }}"
+      },
+      "type": "n8n-nodes-base.executeCommandTool",
+      "typeVersion": 1,
+      "position": [240, 760],
+      "id": "47466840-43ad-4a8f-870e-9ebe93f33994",
+      "name": "cert_expiry"
+    }
+  ],
+  "connections": {
+    "waf_detections": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "access_summary": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "fail2ban_status": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "cert_expiry": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

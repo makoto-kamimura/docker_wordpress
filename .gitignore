@@ -54,6 +54,14 @@ backups/
 /platform/scripts/backup-demo-db.sh
 /platform/cron.d/demo-db-backup
 
+# Server-specific additions layered on top of the base stack
+# (extra backup targets, personal blog auto-post workflows - their env vars live
+#  in docker-compose.demo.yml; local WAF exclusions: platform/nginx_data/.gitignore)
+/platform/backup-files.targets
+/platform/n8n/workflows/security-weekly-report.json
+/platform/n8n/workflows/ai-trend-weekly-report.json
+/platform/n8n/workflows/tech-blog-auto-post.json
+
 # OS
 .DS_Store
 Thumbs.db

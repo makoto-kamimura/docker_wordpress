@@ -312,6 +312,109 @@ services:
       - frontend_network
 
   # -------------------------------------------------------------------
+  # n8n (profile=automation) — ワークフロー自動化 / MCP サーバー
+  #
+  # サーバーの状態 (WAF 検知・アクセスログ・fail2ban・証明書の期限) を
+  # AI から照会できるようにし、あわせて毎朝のダイジェストと WAF の閾値
+  # アラートをメールで送るために置いている。
+  # 実際の集計は scripts/*.sh が行い、n8n はそれを MCP ツールとして公開する /
+  # 定期実行してメールする薄いラッパー (詳細は n8n/README.md)。
+  #
+  # 127.0.0.1:5678 のみにバインドする。MCP クライアント (Claude Code 等) は
+  # 同一ホストから繋ぐ想定で、外部公開はしない。リモートから触る場合は
+  # uptime-kuma と同様に SSH トンネルを使う:
+  #   ssh -L 5678:127.0.0.1:5678 deployer@<host>
+  #
+  # 起動: docker compose --profile automation up -d n8n
+  # -------------------------------------------------------------------
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.41.0
+    profiles: ["automation"]
+    <<: *default-restart
+    logging: *default-logging
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      # 認証情報の暗号化キー。変更すると保存済みの認証情報が復号できなくなる
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: 127.0.0.1
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: http
+      # ループバック限定かつ HTTP のため、secure cookie を無効にしないとログインできない
+      N8N_SECURE_COOKIE: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      # n8n 2.x は executeCommand / localFileTrigger を既定で無効にしている
+      # (既定値: ["n8n-nodes-base.executeCommand", "n8n-nodes-base.localFileTrigger"])。
+      # WAF レポートは Execute Command から waf-report.sh を呼ぶ構成のため、
+      # executeCommand だけを除外リストから外す。この変数は既定値を「置き換える」ので、
+      # localFileTrigger は明示的に残しておく必要がある。
+      #
+      # このノードは n8n コンテナ内で任意のコマンドを実行できる。許容できるのは
+      # 次の条件が揃っているため。外部公開する場合は前提が崩れるので見直すこと:
+      #   - 127.0.0.1 限定バインドで、ワークフローを編集できるのは管理者のみ
+      #   - MCP エンドポイントは Bearer 認証必須
+      #   - コンテナは cap_drop: ALL / no-new-privileges、マウントは読み取り専用
+      NODES_EXCLUDE: '["n8n-nodes-base.localFileTrigger"]'
+      GENERIC_TIMEZONE: ${TZ:-Asia/Tokyo}
+      TZ: ${TZ:-Asia/Tokyo}
+      # ノード内で $env が使えるようにする (既定値だが、SMTP 認証情報を
+      # $env 参照で組み立てているため明示しておく。詳細は n8n/README.md)
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      # 各レポートスクリプトがコンテナ内のマウント先を見るようにする
+      WAF_LOG_FILE: /logs/nginx/error.log
+      ACCESS_LOG_FILE: /logs/nginx/access.log
+      F2B_LOG_FILE: /logs/fail2ban/fail2ban.log
+      CERT_DIR: /certs
+      BACKUP_DIR: /backup
+      # 通知メールの宛先と送信元。SMTP_* は WordPress 用の設定を使い回す
+      # (n8n の SMTP 認証情報を {{ $env.SMTP_* }} で参照させ、パスワードを
+      #  n8n の DB に持たせないため)
+      OPS_ALERT_EMAIL_TO: ${OPS_ALERT_EMAIL_TO:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      # WAF 閾値アラート (waf-threshold-alert ワークフローが参照)
+      #   THRESHOLD: 1 時間に同一 IP から何件遮断されたら通知するか
+      #   COOLDOWN : 同じ IP を何時間は再通知しないか
+      WAF_ALERT_THRESHOLD: ${WAF_ALERT_THRESHOLD:-30}
+      WAF_ALERT_COOLDOWN_HOURS: ${WAF_ALERT_COOLDOWN_HOURS:-6}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      # ワークフローから叩くスクリプト群と、その入力になる nginx ログ。どちらも読み取り専用
+      - ./scripts:/scripts:ro
+      - nginx_logs:/logs/nginx:ro
+      # fail2ban はホストで動いているのでホスト側のログを直接読む。
+      # ファイル 1 個だけのマウントなので、logrotate (週次・create 方式) の
+      # あとはコンテナ内が古い実体を掴んだままになる。
+      # fail2ban-status.sh が stale を立てて知らせるので、出たら restart する。
+      - /var/log/fail2ban.log:/logs/fail2ban/fail2ban.log:ro
+      # 証明書の有効期限用。privkey*.pem は 0600 で nginx (uid 101) 所有のため、
+      # uid 1000 (node) で動く n8n からは読めない。読めるのは cert/chain のみ。
+      - ./nginx_data/certs:/certs:ro
+      # DB バックアップの世代確認用 (中身は読まずファイル名と日時だけ見る)
+      - ../app/backup:/backup:ro
+      # `n8n import:workflow` で取り込むワークフロー定義
+      - ./n8n/workflows:/workflows:ro
+    # fail2ban.log は root:adm 0640。adm グループ (GID 4) を足して読めるようにする。
+    # 追加の権限ではなく「マウントしたファイルを読むためのグループ」なので、
+    # cap_drop: ALL の前提は変わらない。
+    group_add:
+      - "4"
+    deploy:
+      resources:
+        limits:
+          memory: ${N8N_MEM_LIMIT:-768m}
+    mem_limit: ${N8N_MEM_LIMIT:-768m}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - frontend_network
+
+  # -------------------------------------------------------------------
   # WP-CLI (profile=cli) — 自動セットアップ / プラグイン管理 / DB 操作用
   # 例: docker compose run --rm wpcli wp plugin list
   # -------------------------------------------------------------------
@@ -410,6 +513,10 @@ volumes:
   redis_data:
     driver: local
   uptime_kuma_data:
+    driver: local
+  # 認証情報 DB と暗号鍵が入る。bind マウントにするとリポジトリ配下に置きかねないので
+  # 名前付きボリュームのままにしておく (uptime_kuma_data と同じ方針)
+  n8n_data:
     driver: local
 
 # =====================================================================
