@@ -31,11 +31,14 @@ platform/nginx_data/conf.d/*.conf
 # Temporary
 /work
 
-# Personal blog content (spec/design/ops notes, not part of the WordPress setup itself)
-/docs/
+# Personal notes (spec/design/ops notes, incidents, audits - not part of the WordPress setup itself).
+# Only the folder layout is tracked: docs/README.md and docs/<kind>/.gitkeep.
+/docs/**
+!/docs/README.md
+!/docs/*/
+!/docs/*/.gitkeep
 /design/
 /platform/docs/
-/history.md
 
 # Local backups / working copies (may contain live secrets - never commit)
 *.bak
