@@ -2,3 +2,5 @@
 !/.gitignore
 !/modsec-rules/
 !/modsec-rules/**
+# このサーバー固有の除外ルール (docker-compose.demo.yml がマウントする)
+/modsec-rules/*.local.conf

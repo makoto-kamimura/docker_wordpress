@@ -1,0 +1,77 @@
+{
+  "id": "opsDigestMail",
+  "name": "運用ダイジェスト (毎朝メール)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [0, 0],
+      "id": "51290a34-13f4-4c53-b051-67e91a68fed7",
+      "name": "毎朝 7:00"
+    },
+    {
+      "parameters": {
+        "command": "/scripts/ops-digest.sh --hours 24"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [220, 0],
+      "id": "469b90ed-b355-4abf-bfb7-0e637480a2f1",
+      "name": "ダイジェストを作る"
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM_EMAIL }}",
+        "toEmail": "={{ $env.OPS_ALERT_EMAIL_TO }}",
+        "subject": "=[運用ダイジェスト / {{ $json.stdout.includes('特にありません') ? '異常なし' : '要対応あり' }}] {{ $now.toFormat('yyyy-MM-dd') }}",
+        "emailFormat": "text",
+        "text": "={{ $json.stdout }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [460, 0],
+      "id": "cda82912-8b53-4650-9968-957bade51c5f",
+      "name": "メール送信"
+    }
+  ],
+  "connections": {
+    "毎朝 7:00": {
+      "main": [
+        [
+          {
+            "node": "ダイジェストを作る",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ダイジェストを作る": {
+      "main": [
+        [
+          {
+            "node": "メール送信",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

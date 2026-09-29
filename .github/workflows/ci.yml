@@ -69,6 +69,8 @@ jobs:
             slug: phpmyadmin
           - image: louislam/uptime-kuma:1.23.13
             slug: uptime-kuma
+          - image: docker.n8n.io/n8nio/n8n:2.41.0
+            slug: n8n
     steps:
       - uses: actions/checkout@v4
       - name: Run Trivy

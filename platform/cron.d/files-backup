@@ -1,0 +1,21 @@
+# アップロード済みファイルを毎日アーカイブする
+# 毎日 03:20 に次を tar.gz にして app/backup/files/ に置く。
+#   uploads … WordPress の wp-content/uploads (bind)
+#   ほか platform/backup-files.targets (git 管理外) に書いた対象
+#     (docker-compose.demo.yml で追加したアプリのアップロード先など)
+# 14 日 (FILES_BACKUP_KEEP_DAYS の既定値) より古い *.tar.gz は自動削除される。
+#
+# DB ダンプだけでは添付ファイルが戻らないため分けてある
+# (DB にはパスやキーだけが入り、実体はこれらの中にある)。
+#
+# 名前付きボリュームの実体の場所は backup-files.sh が docker volume inspect で解決する。
+#
+# ⚠️ 稼働中のまま固めるため、瞬間的な整合性までは保証しない
+#    (電源断と同じ「その時点のファイル群」)。
+#
+# 実行ログ: /var/log/files_backup.log
+# 手動実行: __REPO_DIR__/platform/scripts/backup-files.sh
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+20 3 * * * root __REPO_DIR__/platform/scripts/backup-files.sh >> /var/log/files_backup.log 2>&1

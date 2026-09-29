@@ -1,0 +1,110 @@
+{
+  "id": "wafThresholdAlert",
+  "name": "WAF 閾値アラート (1時間ごと)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "5 * * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "22daa22a-6d49-4375-9c45-e86af98fe8a0",
+      "name": "1 時間ごと"
+    },
+    {
+      "parameters": {
+        "command": "/scripts/waf-report.sh --hours 1 --limit 10 --recent 0"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "id": "b7ff9ef9-4278-4dff-bf1b-a585842f3f4a",
+      "name": "直近1時間のWAF検知"
+    },
+    {
+      "parameters": {
+        "jsCode": "// waf-report.sh の結果から「短時間に同じ IP から遮断が集中している」ものだけを拾う。\n//\n// 判定とメール本文の組み立てだけをここに置いている (集計はスクリプト側)。\n// n8n でやる理由は 2 つ:\n//   - 前回いつ通知したかを保持できる ($getWorkflowStaticData)。\n//     同じスキャナで毎時間メールが来ると、そのうち誰も読まなくなる。\n//   - 閾値やクールダウンをワークフローの編集だけで変えられる。\nconst threshold = Number($env.WAF_ALERT_THRESHOLD || 30);\nconst cooldownHours = Number($env.WAF_ALERT_COOLDOWN_HOURS || 6);\n\nconst raw = $input.first().json.stdout || '';\nlet report;\ntry {\n  report = JSON.parse(raw);\n} catch (e) {\n  // JSON として読めない = スクリプトが壊れている。黙って止まらないよう例外にする。\n  throw new Error('waf-report.sh の出力を JSON として読めません: ' + raw.slice(0, 300));\n}\n\nconst hits = (report.top_ips || []).filter((r) => Number(r.count) >= threshold);\n\n// 通知済みの IP はクールダウンの間スキップする\nconst state = $getWorkflowStaticData('global');\nstate.notified = state.notified || {};\nconst now = Date.now();\nconst cooldownMs = cooldownHours * 3600 * 1000;\nconst fresh = hits.filter((h) => !state.notified[h.ip] || now - state.notified[h.ip] > cooldownMs);\nfor (const h of fresh) state.notified[h.ip] = now;\n\n// 1 週間触れていない記録は捨てる (静的データが際限なく太らないように)\nfor (const ip of Object.keys(state.notified)) {\n  if (now - state.notified[ip] > 7 * 24 * 3600 * 1000) delete state.notified[ip];\n}\n\n// 該当なしならここで終わり。後続のメールノードは実行されない。\nif (fresh.length === 0) return [];\n\nconst w = report.window || {};\nconst s = report.summary || {};\nconst lines = fresh.map((h) => '  ' + h.ip + '  ' + h.count + ' 件');\nconst uris = (report.top_uris || []).slice(0, 5).map((u) => '  ' + u.uri + '  ' + u.count + ' 件');\n\nconst text = [\n  'WAF (ModSecurity) が同一 IP からのリクエストを集中的に遮断しています。',\n  '',\n  '集計範囲 : 直近 ' + (w.hours || 1) + ' 時間 (' + (w.since || '') + ' 以降, ' + (w.log_tz || '') + ')',\n  '遮断件数 : ' + (s.blocked || 0) + ' 件 / 攻撃元 ' + (s.unique_ips || 0) + ' IP',\n  '閾値     : 1 IP あたり ' + threshold + ' 件以上 (同じ IP は ' + cooldownHours + ' 時間再通知しない)',\n  '',\n  '■ 閾値を超えた IP',\n  ...lines,\n  '',\n  '■ この時間に狙われた URI',\n  ...uris,\n  '',\n  '■ 確認のしかた',\n  '  BAN されているか   : fail2ban-client status nginx-modsecurity',\n  '  手動で BAN する    : fail2ban-client set nginx-modsecurity banip <IP>',\n  '  詳しい内容を見る   : platform/scripts/waf-report.sh --hours 1 --recent 30',\n  '',\n  '(fail2ban の nginx-modsecurity は 10 分間に 15 回で 24 時間 BAN。',\n  ' それでも遮断が続く場合は、BAN 解除待ちの再開かサブネットを変えた再試行の可能性があります)',\n].join('\\n');\n\nreturn [\n  {\n    json: {\n      subject: 'WAF: ' + fresh.map((h) => h.ip).join(', ') + ' からの遮断が閾値を超えました',\n      text,\n      threshold,\n      ips: fresh,\n    },\n  },\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        0
+      ],
+      "id": "a2c7af27-5ca4-4a6e-b8c0-71f5dda8f023",
+      "name": "閾値判定"
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM_EMAIL }}",
+        "toEmail": "={{ $env.OPS_ALERT_EMAIL_TO }}",
+        "subject": "=[WAFアラート] {{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        700,
+        0
+      ],
+      "id": "79bb918b-7db5-43fb-b99c-dc3aee517689",
+      "name": "メール送信"
+    }
+  ],
+  "connections": {
+    "1 時間ごと": {
+      "main": [
+        [
+          {
+            "node": "直近1時間のWAF検知",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "直近1時間のWAF検知": {
+      "main": [
+        [
+          {
+            "node": "閾値判定",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "閾値判定": {
+      "main": [
+        [
+          {
+            "node": "メール送信",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}
