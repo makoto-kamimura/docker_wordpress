@@ -4,7 +4,7 @@
 # - WordPress core install (まだなら)
 # - siteurl / home を本番 URL に合わせる
 # - パーマリンクを /%postname%/ に
-# - tty-portfolio テーマを有効化
+# - THEME_SLUG (.env) のテーマを有効化 (未設定ならスキップ)
 # - 必須プラグインをインストール + 有効化:
 #     redis-cache, wps-hide-login, wordfence, wp-mail-smtp
 # - Redis Object Cache を有効化
@@ -34,7 +34,7 @@ ADMIN_EMAIL="${ADMIN_EMAIL:-${LETSENCRYPT_EMAIL}}"
 ADMIN_PASS="${ADMIN_PASS:-}"
 SITE_TITLE="${SITE_TITLE:-Makoto Kamimura}"
 WP_LOCALE="${WP_LOCALE:-ja}"
-THEME_SLUG="${THEME_SLUG:-tty-portfolio}"
+THEME_SLUG="${THEME_SLUG:-}"
 
 if [[ -z "${ADMIN_PASS}" ]]; then
   ADMIN_PASS="$(LC_ALL=C tr -dc 'A-Za-z0-9_-' </dev/urandom | head -c 24)"
@@ -94,8 +94,10 @@ wp language core activate "${WP_LOCALE}"      || true
 log "Setting permalink structure..."
 wp rewrite structure '/%postname%/' --hard
 
-log "Activating theme ${THEME_SLUG}..."
-if wp theme is-installed "${THEME_SLUG}" >/dev/null 2>&1; then
+if [[ -z "${THEME_SLUG}" ]]; then
+  log "THEME_SLUG is not set. Skipping theme activation."
+elif wp theme is-installed "${THEME_SLUG}" >/dev/null 2>&1; then
+  log "Activating theme ${THEME_SLUG}..."
   wp theme activate "${THEME_SLUG}"
 else
   warn "theme '${THEME_SLUG}' not found in wp-content/themes/. Skipping."

@@ -1,6 +1,6 @@
 # docker_wordpress
 
-> Production-ready WordPress stack on Docker Compose — WAF, Redis, dark-mode portfolio theme, and one-command setup included.
+> Production-ready WordPress stack on Docker Compose — WAF, Redis, backups, monitoring, and one-command setup included.
 
 [![CI](https://github.com/makoto-kamimura/docker_wordpress/actions/workflows/ci.yml/badge.svg)](https://github.com/makoto-kamimura/docker_wordpress/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
@@ -11,7 +11,7 @@
 [![Redis 7](https://img.shields.io/badge/Redis-7.4-DC382D?logo=redis&logoColor=white)](https://redis.io/)
 [![OWASP CRS](https://img.shields.io/badge/OWASP-ModSecurity_CRS-000000?logo=owasp&logoColor=white)](https://coreruleset.org/)
 
-ポートフォリオ / 中規模ブログを **1 VM** で本番運用するための WordPress スタック。よくある「とりあえず WordPress を Docker で動かしてみた」段階から、**WAF / シークレット分離 / ネットワーク二段分離 / 自動デプロイ / バックアップ / 監視** まで一通り入った状態を、数コマンドで展開できる。同梱テーマ [`tty-portfolio`](./app/wordpress/wordpress_data/wp-content/themes/tty-portfolio/) は terminal / monospace minimal なポートフォリオ向け (Lighthouse 90+ / WCAG AA / dark mode / OGP + JSON-LD)。
+ポートフォリオ / 中規模ブログを **1 VM** で本番運用するための WordPress スタック。よくある「とりあえず WordPress を Docker で動かしてみた」段階から、**WAF / シークレット分離 / ネットワーク二段分離 / 自動デプロイ / バックアップ / 監視** まで一通り入った状態を、数コマンドで展開できる。
 
 ## コンセプト
 
@@ -37,7 +37,7 @@ docker_wordpress は、**公開に必要な守りと運用を最初から揃え�
 
 | 部 | 内容 | 主な読者 |
 |---|---|---|
-| [第1部 概要説明](#第1部-概要説明) | 目的、構成サービス、基本フロー、同梱テーマ、ロードマップ | すべての人 |
+| [第1部 概要説明](#第1部-概要説明) | 目的、構成サービス、基本フロー、テーマ、ロードマップ | すべての人 |
 | [第2部 技術説明](#第2部-技術説明) | 技術スタック、システム構成、クイックスタート、ネットワーク、ボリューム、実装方針、非機能要件 | 開発者・運用者 |
 | [付録](#付録) | 決定事項、未決事項 | すべての人 |
 
@@ -47,7 +47,7 @@ docker_wordpress は、**公開に必要な守りと運用を最初から揃え�
 - [第1部 概要説明](#第1部-概要説明)
   - [特徴](#特徴) / [使い方のイメージ](#使い方のイメージ)
   - [1. 概要](#1-概要) / [2. 用語](#2-用語) / [3. 構成サービス](#3-構成サービス) / [4. 基本フロー](#4-基本フロー)
-  - [5. 同梱テーマ tty-portfolio](#5-同梱テーマ-tty-portfolio) / [6. 開発ロードマップ](#6-開発ロードマップ)
+  - [5. テーマ](#5-テーマ) / [6. 開発ロードマップ](#6-開発ロードマップ)
 - [第2部 技術説明](#第2部-技術説明)
   - [7. 技術スタックとシステム構成](#7-技術スタックとシステム構成)（[クイックスタート](#76-クイックスタート)を含む）
   - [8. ネットワーク](#8-ネットワーク) / [9. ボリュームと bind マウント](#9-ボリュームと-bind-マウント) / [10. 機能ごとの実装方針](#10-機能ごとの実装方針) / [11. 非機能要件](#11-非機能要件)
@@ -69,7 +69,6 @@ docker_wordpress は、**公開に必要な守りと運用を最初から揃え�
 | DB | MariaDB 10.11 LTS（MySQL 5.7 EOL からの移行先） |
 | Object cache | Redis 7（`requirepass`、読み取り専用コンテナ） |
 | TLS | Let's Encrypt の自動更新 + 更新後の nginx 自動 reload、TLSv1.2/1.3、OCSP stapling、HSTS |
-| 同梱テーマ | `tty-portfolio`（CPT `work` + Demo/Repo メタ + カスタマイザー） |
 | WP-CLI による自動構築 | 初回セットアップ・プラグイン・Salt・SMTP を 1 コマンドで |
 | バックアップ | WordPress DB と uploads を日次 cron で取得・世代管理 |
 | 監視 | Uptime Kuma（セルフホスト外形監視）、毎朝の運用ダイジェストと WAF の閾値アラートをメールで通知 |
@@ -110,7 +109,7 @@ flowchart LR
 
 | ユースケース | 使い方 |
 |---|---|
-| 個人のポートフォリオ | 同梱テーマ `tty-portfolio` で Works（制作物）とブログを公開する |
+| 個人のポートフォリオ | 好みのテーマを置いて、制作物とブログを公開する |
 | 中規模のブログ | Redis のオブジェクトキャッシュと Cloudflare 前段で、1 VM のままアクセス増に耐える |
 | 制作物のデモを同じサーバーで公開 | `docker-compose.demo.yml` の overlay でサブドメインごとに別アプリを載せ、同じ WAF を通す |
 
@@ -207,27 +206,18 @@ cron（`setup-host.sh` が `/etc/cron.d/` に配置）で毎日取得する。
 
 n8n の設定は [platform/n8n/README.md](platform/n8n/README.md) を参照。
 
-## 5. 同梱テーマ tty-portfolio
+## 5. テーマ
 
-[Terminal / monospace minimal なポートフォリオテーマ](./app/wordpress/wordpress_data/wp-content/themes/tty-portfolio/)（git サブモジュール）。
+テーマは本リポジトリに含めない。`app/wordpress/wordpress_data/wp-content/themes/` に置き（git 管理外）、`.env` の `THEME_SLUG` にディレクトリ名を書くと、`initial-setup.sh` が有効にする。未設定なら有効化は行わず、WordPress の既定テーマのままになる。
 
-| 項目 | 内容 |
-|---|---|
-| Hero | `$ whoami` 風のターミナルカード、ASCII プロンプト + 名前 + tagline + CTA |
-| セクション | Hero / About / Skills（progress bar）/ Works / Blog / Contact |
-| CPT | `work`（+ `tech` タクソノミー）。Demo URL / Repository URL / ボタンラベル / Role / Period のメタ |
-| カスタマイザー | Hero / About / Contact / SEO の 4 セクション |
-| Dark / Light | `prefers-color-scheme` + 手動トグル + localStorage、FOUC 防止 |
-| アクセシビリティ | skip-link / `:focus-visible` / aria-current / `prefers-reduced-motion` |
-| SEO | OGP / Twitter Cards / JSON-LD（WebSite + Person + Article + CreativeWork）/ sitemap.xml |
-| 性能 | emoji / dashicons 除去、ブロックスタイルの条件付き dequeue、画像 lazy + async decode、JS `defer` |
+テーマの更新はテーマ側のリポジトリやアップロードで行い、本スタックのデプロイ（`deploy.sh`）では触らない。テーマ独自の REST API などで WAF の誤検知が出る場合は、git 管理外の除外ルールで外す（[10.1節](#101-waf-と除外ルール)）。
 
 ## 6. 開発ロードマップ
 
 | Phase | 内容 | 状態 |
 |---|---|---|
 | 0 | WordPress + MySQL + Nginx の compose、Let's Encrypt、phpMyAdmin・Webalizer | 完了（2021〜2024） |
-| 1 | 本番化: MariaDB 移行、ModSecurity + CRS、ネットワーク二段分離、シークレットの `.env` 集約、`tty-portfolio`、wp-cli 自動構築 | 完了（2026-05） |
+| 1 | 本番化: MariaDB 移行、ModSecurity + CRS、ネットワーク二段分離、シークレットの `.env` 集約、wp-cli 自動構築 | 完了（2026-05） |
 | 2 | 運用の自動化: deploy.sh と自動ロールバック、CI（ShellCheck・Trivy）、fail2ban とホスト設定、証明書更新後の自動 reload、cron のリポジトリ管理 | 完了（2026-07〜09） |
 | 3 | 運用の見える化: 運用ダイジェスト、WAF 閾値アラート、MCP による照会、uploads のバックアップ | 完了（2026-09） |
 | 4 | 守りと復旧の強化: バックアップの外部保管、CSP の本適用、nginx ログのローテーション | 未着手（[未決事項](#13-未決事項)） |
@@ -289,8 +279,7 @@ flowchart TB
 
 ```
 docker_wordpress/
-├── app/                                # 永続データ (DB / WordPress / ログ / バックアップ)
-│   └── wordpress/wordpress_data/wp-content/themes/tty-portfolio/   # 同梱テーマ (submodule)
+├── app/                                # 永続データ (DB / WordPress / ログ / バックアップ。テーマもここに置く)
 ├── platform/                           # 基盤定義
 │   ├── docker-compose.yml              # 10 サービス + profile
 │   ├── docker-compose.demo.yml.template  # overlay のひな形 (実体の .yml は git 管理外)
@@ -359,10 +348,10 @@ SSH ポートと管理者の接続元 IP は、公開リポジトリに載せな
 
 ```bash
 # 1. シークレットを用意する
-git clone --recurse-submodules https://github.com/makoto-kamimura/docker_wordpress.git
+git clone https://github.com/makoto-kamimura/docker_wordpress.git
 cd docker_wordpress/platform
 cp .env.example .env
-$EDITOR .env       # PUBLIC_DOMAIN / LETSENCRYPT_EMAIL / パスワード / Salt を埋める
+$EDITOR .env       # PUBLIC_DOMAIN / LETSENCRYPT_EMAIL / パスワード / Salt を埋める (テーマを使うなら THEME_SLUG も)
 
 # Salt キーの生成
 for k in WP_AUTH_KEY WP_SECURE_AUTH_KEY WP_LOGGED_IN_KEY WP_NONCE_KEY \
@@ -394,7 +383,7 @@ sudo ./scripts/setup-host.sh
 `initial-setup.sh` は次を冪等に行う。終わったら `https://<your-domain>/wp-admin/` でログインする。
 
 - WordPress core install、`siteurl` / `home` / タイムゾーン / ロケールの設定
-- パーマリンク `/%postname%/`、`tty-portfolio` の有効化
+- パーマリンク `/%postname%/`、`THEME_SLUG` のテーマの有効化
 - `redis-cache` / `wps-hide-login` / `wordfence` / `wp-mail-smtp` のインストールと有効化、Redis Object Cache の有効化
 - （`.env` に `SMTP_*` があれば）WP Mail SMTP の自動構成
 
@@ -442,7 +431,7 @@ n8n は `./scripts`・`nginx_logs`・`/var/log/fail2ban.log`・`./nginx_data/cer
 ### 10.1 WAF と除外ルール
 
 - CRS は `PARANOIA=1`、`ANOMALY_INBOUND=10` / `ANOMALY_OUTBOUND=5` で動かす。
-- 誤検知は、パス・メソッド・認証ヘッダで範囲を絞った `ctl:` ルールで外す（例: `/wp-json/tty/v1/` のコメント本文、認証付きの記事投稿 API）。ルールは `REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf` に書く。
+- 誤検知は、パス・メソッド・認証ヘッダで範囲を絞った `ctl:` ルールで外す（例: 認証付きの記事投稿 API）。ルールは `REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.conf` に書く。
 - 独自ルールの ID は **9500000 番台以降**を使う。CRS は `9001xxx`〜`9006xxx` をアプリ別の除外に予約しており、重複すると nginx が `Rule id: XXXXXX is duplicated` で起動しない。
 - 特定のドメインや追加アプリにだけ効く除外は、git 管理外の `*.local.conf` に置き、overlay から追加でマウントする。CRS は `rules/*.conf` を名前順に読むため、`REQUEST-900-EXCLUSION-RULES-BEFORE-CRS.local.conf` は REQUEST-901 より前に読み込まれる。
 - nginx でも `xmlrpc.php` / `wp-config.php` / `.htaccess` / `.git` / `.env` / `wp-content/uploads/*.php` を deny し、`/wp-json/wp/v2/users` は 401 にする（ユーザー列挙対策）。
