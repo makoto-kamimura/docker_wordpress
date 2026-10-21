@@ -136,7 +136,7 @@ flowchart LR
 | `redis` | `redis:7.4.2-alpine` | 常駐 | オブジェクトキャッシュ | 内部のみ |
 | `nginx` | `owasp/modsecurity-crs:nginx-alpine` | 常駐 | リバースプロキシ + WAF | **80 / 443** |
 | `certbot` | `certbot/certbot:v2.11.0` | 常駐 | Let's Encrypt の更新ループ | - |
-| `phpmyadmin` | `phpmyadmin/phpmyadmin:5.2.3` | `admin` | DB 管理 | `127.0.0.1:8888` |
+| `phpmyadmin` | `phpmyadmin:5.2.3` | `admin` | DB 管理 | `127.0.0.1:8888` |
 | `webalizer` | `toughiq/webalizer:latest` | `stats` | アクセスログ解析 | 内部のみ |
 | `wpcli` | `wordpress:cli-2.12.0-php8.3` | `cli` | 自動構築・運用 | 内部のみ |
 | `uptime-kuma` | `louislam/uptime-kuma:1.23.13` | `monitoring` | 外形監視 | `127.0.0.1:3001` |

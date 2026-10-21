@@ -65,7 +65,7 @@ jobs:
             slug: redis
           - image: certbot/certbot:v2.11.0
             slug: certbot
-          - image: phpmyadmin/phpmyadmin:5.2.3
+          - image: phpmyadmin:5.2.3
             slug: phpmyadmin
           - image: louislam/uptime-kuma:1.23.13
             slug: uptime-kuma

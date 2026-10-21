@@ -451,7 +451,7 @@ services:
   #   docker compose --profile admin up -d phpmyadmin
   # -------------------------------------------------------------------
   phpmyadmin:
-    image: phpmyadmin/phpmyadmin:5.2.3
+    image: phpmyadmin:5.2.3
     profiles: ["admin"]
     logging: *default-logging
     depends_on:
