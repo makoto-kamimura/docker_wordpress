@@ -132,13 +132,13 @@ flowchart LR
 | サービス | イメージ | profile | 役割 | 公開ポート |
 |---|---|---|---|---|
 | `db` | `mariadb:10.11.13` | 常駐 | DB | 内部のみ |
-| `wordpress` | `wordpress:6.7.2-php8.3-apache` | 常駐 | WordPress 本体 | 内部のみ |
+| `wordpress` | `wordpress:7.1.3-php8.3-apache` | 常駐 | WordPress 本体 | 内部のみ |
 | `redis` | `redis:7.4.2-alpine` | 常駐 | オブジェクトキャッシュ | 内部のみ |
 | `nginx` | `owasp/modsecurity-crs:nginx-alpine` | 常駐 | リバースプロキシ + WAF | **80 / 443** |
 | `certbot` | `certbot/certbot:v2.11.0` | 常駐 | Let's Encrypt の更新ループ | - |
-| `phpmyadmin` | `phpmyadmin/phpmyadmin:5.2.1` | `admin` | DB 管理 | `127.0.0.1:8888` |
+| `phpmyadmin` | `phpmyadmin:5.2.3` | `admin` | DB 管理 | `127.0.0.1:8888` |
 | `webalizer` | `toughiq/webalizer:latest` | `stats` | アクセスログ解析 | 内部のみ |
-| `wpcli` | `wordpress:cli-2.10.0-php8.3` | `cli` | 自動構築・運用 | 内部のみ |
+| `wpcli` | `wordpress:cli-2.12.0-php8.3` | `cli` | 自動構築・運用 | 内部のみ |
 | `uptime-kuma` | `louislam/uptime-kuma:1.23.13` | `monitoring` | 外形監視 | `127.0.0.1:3001` |
 | `n8n` | `docker.n8n.io/n8nio/n8n:2.41.0` | `automation` | MCP サーバー・通知の定期実行 | `127.0.0.1:5678` |
 

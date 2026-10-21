@@ -58,7 +58,7 @@ services:
   # ホストにポートを露出させない (ports: は意図的に未指定)
   # -------------------------------------------------------------------
   wordpress:
-    image: wordpress:6.7.2-php8.3-apache
+    image: wordpress:7.1.3-php8.3-apache
     <<: *default-restart
     logging: *default-logging
     depends_on:
@@ -419,7 +419,7 @@ services:
   # 例: docker compose run --rm wpcli wp plugin list
   # -------------------------------------------------------------------
   wpcli:
-    image: wordpress:cli-2.10.0-php8.3
+    image: wordpress:cli-2.12.0-php8.3
     profiles: ["cli"]
     user: "33:33"  # www-data
     logging: *default-logging
@@ -451,7 +451,7 @@ services:
   #   docker compose --profile admin up -d phpmyadmin
   # -------------------------------------------------------------------
   phpmyadmin:
-    image: phpmyadmin/phpmyadmin:5.2.1
+    image: phpmyadmin:5.2.3
     profiles: ["admin"]
     logging: *default-logging
     depends_on:
